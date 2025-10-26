@@ -5,12 +5,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO, Protocol
+from typing import TYPE_CHECKING, BinaryIO, Protocol, Union
 
 if TYPE_CHECKING:
     from datetime import datetime
 
-PathLike = str | Path
+PathLike = Union[str, Path]
 
 
 class FileBackendError(RuntimeError):
@@ -201,3 +201,54 @@ class SupportsBackend(Protocol):
     """Convenience protocol for objects exposing a file backend."""
 
     backend: FileBackend
+
+
+@dataclass(frozen=True)
+class SyncConflict:
+    """Details of an unresolved synchronisation conflict."""
+
+    path: Path
+    status: str
+
+    def as_dict(self) -> dict:
+        """Return a JSON-serialisable representation."""
+        return {"path": str(self.path), "status": self.status}
+
+
+class SyncFileBackend(FileBackend):
+    """Extended backend interface supporting bidirectional synchronisation."""
+
+    @abstractmethod
+    def push(self, *, message: str | None = None) -> None:
+        """Publish local changes to the remote data source."""
+
+    @abstractmethod
+    def pull(self) -> None:
+        """Retrieve remote updates into the local workspace."""
+
+    def sync(self) -> None:
+        """Perform a pull followed by a push."""
+
+        self.pull()
+        self.push()
+
+    @abstractmethod
+    def conflict_report(self) -> list[SyncConflict]:
+        """Return the set of outstanding synchronisation conflicts."""
+
+    @abstractmethod
+    def conflict_accept_local(self, path: PathLike) -> None:
+        """Resolve a conflict by keeping the local version."""
+
+    @abstractmethod
+    def conflict_accept_remote(self, path: PathLike) -> None:
+        """Resolve a conflict by keeping the remote version."""
+
+    @abstractmethod
+    def conflict_resolve(
+        self,
+        path: PathLike,
+        *,
+        data: bytes | str | BinaryIO,
+    ) -> None:
+        """Resolve a conflict by supplying a new version of the file."""

@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+"""Git pre-commit hook tailored to the f9 file backend project.
+
+The hook performs the following steps:
+
+1. Bumps the patch component of the project version in pyproject.toml (unless
+   already changed or explicitly skipped).
+2. Runs Ruff lint checks.
+3. Executes the pytest suite.
+
+Set the `SKIP_HOOKS=1` environment variable to bypass everything, or use the
+more granular `SKIP_VERSION_BUMP=1`, `SKIP_LINT=1`, and `SKIP_TESTS=1`
+variables to selectively disable individual stages. Override the Python
+interpreter with `PYTHON=/path/to/python`.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+from shutil import which
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+
+def _resolve_command(command: Sequence[str]) -> list[str]:
+    """Return command arguments with an absolute executable where available."""
+    resolved = list(command)
+    if resolved:
+        executable = resolved[0]
+        if not Path(executable).is_absolute():
+            located = which(executable)
+            if located:
+                resolved[0] = located
+    return resolved
+
+
+def run(command: list[str], *, cwd: Path, description: str) -> None:
+    """Run a command, surfacing a clear error message on failure."""
+    print(f"[pre-commit] {description}...", flush=True)
+    try:
+        subprocess.run(  # noqa: S603 - command list is constructed internally
+            _resolve_command(command),
+            cwd=cwd,
+            check=True,
+        )
+    except FileNotFoundError as exc:  # pragma: no cover - defensive guard
+        print(
+            f"[pre-commit] Missing executable for {' '.join(command)} ({exc})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except subprocess.CalledProcessError as exc:
+        print(
+            (
+                f"[pre-commit] {description} failed with exit code {exc.returncode}.\n"
+                f"Command: {' '.join(command)}"
+            ),
+            file=sys.stderr,
+        )
+        sys.exit(exc.returncode)
+
+
+VERSION_PATTERN = re.compile(r'^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"', re.MULTILINE)
+
+
+def read_version(text: str) -> tuple[int, int, int] | None:
+    """Extract a semantic version tuple from the given pyproject content."""
+    match = VERSION_PATTERN.search(text)
+    if not match:
+        return None
+    major_str, minor_str, patch_str = match.groups()
+    return int(major_str), int(minor_str), int(patch_str)
+
+
+def format_version(parts: tuple[int, int, int]) -> str:
+    """Convert a semantic version tuple back into string form."""
+    return ".".join(str(part) for part in parts)
+
+
+def bump_patch(parts: tuple[int, int, int]) -> tuple[int, int, int]:
+    """Return a new version tuple with the patch component incremented."""
+    major, minor, patch = parts
+    return major, minor, patch + 1
+
+
+def ensure_version_line(text: str, new_version: tuple[int, int, int]) -> str:
+    """Replace the version line with the provided semantic version."""
+    replacement = f'version = "{format_version(new_version)}"'
+    return VERSION_PATTERN.sub(replacement, text, count=1)
+
+
+def bump_version(repo_root: Path) -> None:
+    """Increment the patch version in pyproject.toml if required."""
+    pyproject = repo_root / "pyproject.toml"
+    if not pyproject.exists():
+        print(
+            "[pre-commit] pyproject.toml not found; skipping version bump.",
+            file=sys.stderr,
+        )
+        return
+
+    text = pyproject.read_text(encoding="utf-8")
+    current_version = read_version(text)
+    if current_version is None:
+        print("[pre-commit] Unable to parse version; skipping bump.", file=sys.stderr)
+        return
+
+    try:
+        head_text = subprocess.check_output(  # noqa: S603 - executing trusted git binary
+            _resolve_command(["git", "show", "HEAD:pyproject.toml"]),
+            cwd=repo_root,
+            text=True,
+        )
+    except subprocess.CalledProcessError:
+        head_version = None
+    else:
+        head_version = read_version(head_text)
+
+    if head_version is not None and head_version != current_version:
+        print("[pre-commit] Version already modified; leaving as-is.")
+        return
+
+    new_version = bump_patch(current_version)
+    updated = ensure_version_line(text, new_version)
+    pyproject.write_text(updated, encoding="utf-8")
+    subprocess.run(  # noqa: S603 - executing trusted git binary
+        _resolve_command(["git", "add", str(pyproject)]),
+        cwd=repo_root,
+        check=True,
+    )
+    print(
+        "[pre-commit] Bumped project version "
+        f"{format_version(current_version)} → {format_version(new_version)}",
+    )
+
+
+def main() -> int:
+    """Run the pre-commit workflow."""
+    if os.environ.get("SKIP_HOOKS") in {"1", "true", "yes"}:
+        print("[pre-commit] Hook skipped via SKIP_HOOKS.")
+        return 0
+
+    try:
+        repo_root = Path(
+            subprocess.check_output(  # noqa: S603 - executing trusted git binary
+                _resolve_command(["git", "rev-parse", "--show-toplevel"]),
+                text=True,
+            ).strip(),
+        )
+    except subprocess.CalledProcessError:
+        print("[pre-commit] Unable to determine git repository root.", file=sys.stderr)
+        return 1
+
+    default_python = Path(repo_root) / ".venv" / "bin" / "python"
+    python = os.environ.get("PYTHON") or (
+        str(default_python) if default_python.exists() else "python3"
+    )
+
+    if os.environ.get("SKIP_VERSION_BUMP") not in {"1", "true", "yes"}:
+        bump_version(repo_root)
+    else:
+        print("[pre-commit] Version bump skipped via SKIP_VERSION_BUMP.")
+
+    if os.environ.get("SKIP_LINT") not in {"1", "true", "yes"}:
+        run(
+            [python, "-m", "ruff", "check"],
+            cwd=repo_root,
+            description="Running Ruff lint",
+        )
+    else:
+        print("[pre-commit] Ruff lint skipped via SKIP_LINT.")
+
+    if os.environ.get("SKIP_TESTS") not in {"1", "true", "yes"}:
+        run(
+            [python, "-m", "pytest"],
+            cwd=repo_root,
+            description="Running pytest",
+        )
+    else:
+        print("[pre-commit] Pytest run skipped via SKIP_TESTS.")
+
+    print("[pre-commit] All checks passed.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
