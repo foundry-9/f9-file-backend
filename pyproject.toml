@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "f9-file-backend"
+version = "0.1.0"
+description = "Unified interface for file storage backends with a local filesystem implementation."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "f9 team" }]
+dependencies = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "License :: Other/Proprietary License",
+    "Operating System :: OS Independent",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+include = ["f9_file_backend*"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # bugbear
+    "UP", # pyupgrade
+    "D200",
+    "D107",
+    "TRY003",
+    "EM102",
+    "D102",
+    "COM812",
+    "ANN202",
+    "DTZ006",
+    "D212",
+    "D413",
+    "TC003",
+    "RUF022",
+    "INP001",
+    "D100",
+    "PT001",
+    "D103",
+    "S101",
+]
+ignore = [
+    "B905",  # zip strict= keyword not yet widely adopted
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/test_local_backend.py" = ["S101"]
+"tests/integration/test_local_backend_integration.py" = ["S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["f9_file_backend"]
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style = "double"
