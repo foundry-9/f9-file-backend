@@ -89,6 +89,21 @@ class InvalidOperationError(FileBackendError):
         """Return an error showing the path escapes the backend root."""
         return cls("Path escapes backend root", path=path)
 
+    @classmethod
+    def parent_path_not_directory(cls, path: PathLike) -> InvalidOperationError:
+        """Return an error when a parent segment is not a directory."""
+        return cls("Parent path is not a directory", path=path)
+
+    @classmethod
+    def empty_path_not_allowed(cls, path: PathLike) -> InvalidOperationError:
+        """Return an error when an operation targets an empty path."""
+        return cls("Path cannot be empty", path=path)
+
+    @classmethod
+    def root_path_not_allowed(cls, path: PathLike) -> InvalidOperationError:
+        """Return an error when the backend root is targeted explicitly."""
+        return cls("Path cannot refer to backend root", path=path)
+
 
 @dataclass(frozen=True)
 class FileInfo:

@@ -84,8 +84,40 @@ When Git reports conflicts during a pull, inspect and resolve them:
 conflicts = backend.conflict_report()
 for conflict in conflicts:
     if conflict.path.name == "summary.txt":
-        backend.conflict_resolve(conflict.path, data="merged content")
+backend.conflict_resolve(conflict.path, data="merged content")
 backend.push(message="Resolve conflicts")
 ```
 
 The backend keeps repository configuration self-contained; no environment variables are required. Supply everything in the connection dictionary so the backend can authenticate to the remote independently of the surrounding process.
+
+## OpenAI Vector Store Backend
+
+The `OpenAIVectorStoreFileBackend` lets you persist files directly to an OpenAI
+vector store. Supply your API key and the target vector store identifier:
+
+```python
+from f9_file_backend import OpenAIVectorStoreFileBackend
+
+backend = OpenAIVectorStoreFileBackend(
+    {
+        "api_key": "sk-your-api-key",
+        "vector_store_id": "vs_123456789",
+        # Optional: cache lookups for N seconds instead of re-listing every call.
+        # "cache_ttl": 5,
+    },
+)
+
+backend.create("documents/welcome.txt", data="hello world")
+print(backend.read("documents/welcome.txt", binary=False))
+backend.delete("documents", recursive=True)
+```
+
+By default the backend refreshes its index before each operation to capture
+changes made by other processes. Provide a `cache_ttl` (in seconds) to reuse the
+cached index for a short period when the workload benefits from fewer list calls.
+
+For an end-to-end validation against live OpenAI services, run
+`python scripts/live_sync_test.py`. The script will prompt for the required API
+credentials (or read them from `OPENAI_API_KEY` / `OPENAI_STORAGE_VAULT_ID`),
+mirror the public `aethermoor` repository into your vector store, and exercise
+the full `SyncFileBackend` workflow using a temporary Git remote.

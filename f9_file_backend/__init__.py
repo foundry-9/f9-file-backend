@@ -14,6 +14,7 @@ from .interfaces import (
     SyncFileBackend,
 )
 from .local import LocalFileBackend
+from .openai_backend import OpenAIBackendError, OpenAIVectorStoreFileBackend
 
 __all__ = [
     "AlreadyExistsError",
@@ -25,6 +26,8 @@ __all__ = [
     "InvalidOperationError",
     "LocalFileBackend",
     "NotFoundError",
+    "OpenAIBackendError",
+    "OpenAIVectorStoreFileBackend",
     "PathLike",
     "SupportsBackend",
     "SyncConflict",
