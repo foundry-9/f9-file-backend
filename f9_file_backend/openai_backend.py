@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import inspect
 import io
+import mimetypes
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -31,6 +35,7 @@ class _RemoteEntry:
     created_at: datetime | None
     modified_at: datetime | None
     file_id: str
+    encoding: str | None = None
 
 
 class OpenAIBackendError(FileBackendError):
@@ -113,6 +118,51 @@ class OpenAIVectorStoreFileBackend(FileBackend):
             except ImportError as exc:  # pragma: no cover
                 raise OpenAIBackendError.missing_dependency() from exc
             self._client = OpenAI(api_key=str(api_key))
+
+        try:
+            create_params = inspect.signature(self._client.files.create).parameters
+        except (TypeError, ValueError):
+            create_params = {}
+        self._files_create_supports_filename = "filename" in create_params
+        self._files_create_supports_metadata = "metadata" in create_params
+        self._vector_files_supports_attributes: bool | None = None
+
+        self._allowed_upload_mimetypes: set[str] = {
+            "application/csv",
+            "application/json",
+            "application/msword",
+            "application/octet-stream",
+            "application/pdf",
+            "application/typescript",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/xml",
+            "application/x-tar",
+            "application/zip",
+            "image/gif",
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "text/css",
+            "text/csv",
+            "text/html",
+            "text/javascript",
+            "text/markdown",
+            "text/plain",
+            "text/x-c",
+            "text/x-c++",
+            "text/x-csharp",
+            "text/x-java",
+            "text/x-php",
+            "text/x-python",
+            "text/x-ruby",
+            "text/x-script.python",
+            "text/x-sh",
+            "text/x-tex",
+            "text/x-typescript",
+            "text/xml",
+        }
 
     def create(
         self,
@@ -272,33 +322,98 @@ class OpenAIVectorStoreFileBackend(FileBackend):
         if self._last_synced is None or now - self._last_synced >= self._sync_interval:
             self._refresh_index()
 
+    def _vector_store_files_resource(self) -> Any | None:
+        """Return the vector store files resource, handling SDK variations."""
+        latest = getattr(self._client, "vector_stores", None)
+        files = getattr(latest, "files", None) if latest else None
+        if files is not None:
+            self._maybe_cache_vector_file_capabilities(files)
+            return files
+
+        beta = getattr(self._client, "beta", None)
+        if beta is not None:
+            vector = getattr(beta, "vector_stores", None)
+            if vector is not None:
+                files = getattr(vector, "files", None)
+                if files is not None:
+                    self._maybe_cache_vector_file_capabilities(files)
+                    return files
+
+        return None
+
+    def _maybe_cache_vector_file_capabilities(self, files: Any) -> None:
+        """Detect whether the SDK supports vector store file attributes."""
+        if self._vector_files_supports_attributes is not None:
+            return
+        try:
+            create_params = inspect.signature(files.create).parameters
+        except (AttributeError, TypeError, ValueError):
+            self._vector_files_supports_attributes = False
+            return
+        self._vector_files_supports_attributes = "attributes" in create_params
+
     def _refresh_index(self) -> None:
         """Synchronise the local index with the vector store."""
         entries: dict[str, _RemoteEntry] = {}
         try:
+            files_resource = self._vector_store_files_resource()
+            if files_resource is None:
+                raise OpenAIBackendError.sync_failed()
+
             after: str | None = None
             while True:
-                response = self._client.beta.vector_stores.files.list(
-                    vector_store_id=self._vector_store_id,
-                    limit=200,
-                    after=after,
-                )
+                kwargs = {
+                    "vector_store_id": self._vector_store_id,
+                    # OpenAI REST currently caps vector store file pagination at 100.
+                    "limit": 100,
+                }
+                if after is not None:
+                    kwargs["after"] = after
+                response = files_resource.list(**kwargs)
                 for item in getattr(response, "data", []):
                     file_id = getattr(item, "file_id", None)
                     if not file_id:
+                        file_id = getattr(item, "id", None)
+                    if not file_id:
                         continue
-                    file_obj = self._client.files.retrieve(file_id)
+                    try:
+                        file_obj = self._client.files.retrieve(file_id)
+                    except Exception as exc:
+                        if _is_not_found_error(exc):
+                            continue
+                        raise
                     metadata = dict(getattr(file_obj, "metadata", {}) or {})
-                    path_value = metadata.get("path")
+                    raw_attributes = getattr(item, "attributes", None) or {}
+                    if isinstance(raw_attributes, Mapping):
+                        attributes = dict(raw_attributes)
+                    else:
+                        attributes = {}
+
+                    path_value = attributes.get("path") or metadata.get("path")
                     if not path_value:
                         continue
-                    is_dir = _metadata_to_bool(metadata.get("is_dir"))
-                    size = _metadata_to_int(metadata.get("size"))
+                    is_dir = _metadata_to_bool(attributes.get("is_dir"))
+                    if "is_dir" not in attributes:
+                        is_dir = _metadata_to_bool(metadata.get("is_dir"))
+                    size_value = attributes.get("size")
+                    size = _metadata_to_int(size_value)
+                    if size is None:
+                        size = _metadata_to_int(metadata.get("size"))
                     raw_size = getattr(file_obj, "bytes", 0) or 0
                     created_at = _timestamp_to_datetime(
                         getattr(file_obj, "created_at", None),
                     )
-                    modified = metadata.get("modified_at")
+                    modified_value = attributes.get("modified_at")
+                    if modified_value is None:
+                        modified_value = metadata.get("modified_at")
+                    modified_at = (
+                        _timestamp_to_datetime(modified_value)
+                        if modified_value is not None
+                        else created_at
+                    )
+                    encoding_value = attributes.get("encoding")
+                    if encoding_value is None:
+                        encoding_value = metadata.get("encoding")
                     entry = _RemoteEntry(
                         path=path_value,
                         is_dir=is_dir,
@@ -306,10 +421,11 @@ class OpenAIVectorStoreFileBackend(FileBackend):
                         if is_dir
                         else (size if size is not None else int(raw_size)),
                         created_at=created_at,
-                        modified_at=_timestamp_to_datetime(modified)
-                        if modified
-                        else created_at,
+                        modified_at=modified_at,
                         file_id=file_id,
+                        encoding=str(encoding_value)
+                        if encoding_value is not None
+                        else None,
                     )
                     entries[path_value] = entry
 
@@ -336,34 +452,82 @@ class OpenAIVectorStoreFileBackend(FileBackend):
         is_dir: bool,
     ) -> _RemoteEntry:
         """Upload content and attach it to the vector store."""
+        modified_timestamp = time.time()
+        encoding = "raw"
         metadata = {
             "path": path,
             "is_dir": "true" if is_dir else "false",
             "size": str(0 if is_dir else len(payload)),
-            "modified_at": str(time.time()),
+            "modified_at": str(modified_timestamp),
+            "encoding": encoding,
         }
-        filename = self._filename_for_path(path, is_dir=is_dir)
-        try:
-            file_obj = self._client.files.create(
-                file=io.BytesIO(payload),
-                purpose=self._purpose,
-                filename=filename,
-                metadata=metadata,
-            )
-        except TypeError:
-            file_obj = self._client.files.create(
-                file=io.BytesIO(payload),
-                purpose=self._purpose,
-                metadata=metadata,
-            )
-        except Exception as exc:
-            raise OpenAIBackendError.upload_failed(path) from exc
+        attributes_payload = {
+            "path": path,
+            "is_dir": is_dir,
+            "size": 0 if is_dir else len(payload),
+            "modified_at": modified_timestamp,
+            "encoding": encoding,
+        }
+
+        def _create_remote_file(data: bytes, name: str, meta: dict[str, str]) -> Any:
+            upload_kwargs: dict[str, Any] = {
+                "file": io.BytesIO(data),
+                "purpose": self._purpose,
+            }
+            if self._files_create_supports_filename:
+                upload_kwargs["filename"] = name
+            if self._files_create_supports_metadata:
+                upload_kwargs["metadata"] = meta
+            try:
+                return self._client.files.create(**upload_kwargs)
+            except TypeError:
+                upload_kwargs.pop("metadata", None)
+                try:
+                    return self._client.files.create(**upload_kwargs)
+                except TypeError:
+                    upload_kwargs.pop("filename", None)
+                    return self._client.files.create(**upload_kwargs)
+
+        upload_payload = payload if not is_dir else b"# directory placeholder\n"
+        filename = self._upload_filename(path, upload_payload, is_dir=is_dir)
 
         try:
-            self._client.beta.vector_stores.files.create(
-                vector_store_id=self._vector_store_id,
-                file_id=file_obj.id,
-            )
+            file_obj = _create_remote_file(upload_payload, filename, metadata)
+        except Exception as exc:
+            if (
+                not is_dir
+                and encoding == "raw"
+                and _is_invalid_mimetype_error(exc)
+            ):
+                encoding = "base64"
+                metadata["encoding"] = encoding
+                attributes_payload["encoding"] = encoding
+                upload_payload = base64.b64encode(payload)
+                filename = self._upload_filename(path, upload_payload, is_dir=is_dir)
+                try:
+                    file_obj = _create_remote_file(upload_payload, filename, metadata)
+                except Exception as retry_exc:
+                    raise OpenAIBackendError.upload_failed(path) from retry_exc
+            else:
+                raise OpenAIBackendError.upload_failed(path) from exc
+
+        file_id = getattr(file_obj, "id", None) or getattr(file_obj, "file_id", None)
+        if file_id is None:
+            raise OpenAIBackendError.upload_failed(path)
+
+        try:
+            files_resource = self._vector_store_files_resource()
+            if files_resource is None:
+                raise OpenAIBackendError.attach_failed(path)
+            attach_kwargs = {
+                "vector_store_id": self._vector_store_id,
+                "file_id": file_id,
+            }
+            if self._vector_files_supports_attributes:
+                attach_kwargs["attributes"] = attributes_payload
+            elif not self._files_create_supports_metadata:
+                raise OpenAIBackendError.attach_failed(path)
+            files_resource.create(**attach_kwargs)
         except Exception as exc:
             raise OpenAIBackendError.attach_failed(path) from exc
 
@@ -375,7 +539,8 @@ class OpenAIVectorStoreFileBackend(FileBackend):
             size=0 if is_dir else len(payload),
             created_at=created_at,
             modified_at=modified_at,
-            file_id=file_obj.id,
+            file_id=file_id,
+            encoding=encoding,
         )
         self._index[path] = entry
         self._last_synced = time.time()
@@ -384,7 +549,10 @@ class OpenAIVectorStoreFileBackend(FileBackend):
     def _remove_entry(self, entry: _RemoteEntry) -> None:
         """Detach a vector store entry and delete the underlying file."""
         try:
-            self._client.beta.vector_stores.files.delete(
+            files_resource = self._vector_store_files_resource()
+            if files_resource is None:
+                raise OpenAIBackendError.detach_failed(entry.path)
+            files_resource.delete(
                 vector_store_id=self._vector_store_id,
                 file_id=entry.file_id,
             )
@@ -412,22 +580,70 @@ class OpenAIVectorStoreFileBackend(FileBackend):
             payload = response.read()
         else:
             payload = response
-        if isinstance(payload, str):
-            return payload.encode("utf-8")
-        if isinstance(payload, bytes):
-            return payload
-        if isinstance(payload, bytearray):
-            return bytes(payload)
-        payload_type = type(payload).__name__
-        raise OpenAIBackendError.download_failed(entry.path, payload_type)
 
-    @staticmethod
-    def _filename_for_path(path: str, *, is_dir: bool) -> str:
-        """Construct a filename for uploads based on the logical path."""
+        if isinstance(payload, str):
+            raw_bytes = payload.encode("utf-8")
+        elif isinstance(payload, bytes):
+            raw_bytes = payload
+        elif isinstance(payload, bytearray):
+            raw_bytes = bytes(payload)
+        else:
+            payload_type = type(payload).__name__
+            raise OpenAIBackendError.download_failed(entry.path, payload_type)
+
+        if entry.encoding == "base64" and not entry.is_dir:
+            try:
+                return base64.b64decode(raw_bytes, validate=True)
+            except Exception as exc:
+                raise OpenAIBackendError.download_failed(entry.path, "base64") from exc
+
+        return raw_bytes
+
+    def _upload_filename(self, path: str, payload: bytes, *, is_dir: bool) -> str:
+        """Return a filename that yields an allowed MIME type for upload."""
+        candidate = self._canonical_filename(path, is_dir=is_dir)
+        if self._filename_mimetype_allowed(candidate):
+            return candidate
+
+        suffix = ".txt" if self._looks_like_text(payload) else ".bin"
+        digest_bytes = hashlib.sha1(
+            path.encode("utf-8"),
+            usedforsecurity=False,
+        ).hexdigest()
+        digest = digest_bytes[:8]
+        base = PurePosixPath(path).name or "root"
+        fallback = f"{base}-{digest}{suffix}"
+        if self._filename_mimetype_allowed(fallback):
+            return fallback
+
+        # As a last resort, use a generic safe name.
+        safe_name = f"file-{digest}{suffix}"
+        return safe_name
+
+    def _canonical_filename(self, path: str, *, is_dir: bool) -> str:
+        """Return the default filename derived from the logical path."""
         candidate = path.rsplit("/", 1)[-1] or "root"
         if is_dir:
             return f"{candidate}.dir"
         return candidate
+
+    def _filename_mimetype_allowed(self, filename: str) -> bool:
+        """Return True when the filename maps to an allowed MIME type."""
+        mimetype, _ = mimetypes.guess_type(filename)
+        return mimetype in self._allowed_upload_mimetypes if mimetype else False
+
+    @staticmethod
+    def _looks_like_text(payload: bytes) -> bool:
+        """Best-effort detection for textual payloads."""
+        if not payload:
+            return True
+        if b"\x00" in payload:
+            return False
+        try:
+            payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return False
+        return True
 
     def _entry_to_info(self, entry: _RemoteEntry) -> FileInfo:
         """Convert an internal entry to public FileInfo."""
@@ -504,3 +720,19 @@ def _timestamp_to_datetime(value: Any) -> datetime | None:
     except (TypeError, ValueError):
         return None
     return datetime.fromtimestamp(numeric, tz=timezone.utc)
+
+
+def _is_invalid_mimetype_error(exc: Exception) -> bool:
+    """Return True when the exception indicates an unsupported MIME type."""
+    message = getattr(exc, "message", None)
+    if not message:
+        message = str(exc)
+    return "Invalid file format" in message
+
+
+def _is_not_found_error(exc: Exception) -> bool:
+    """Return True when the exception indicates a missing remote file."""
+    message = getattr(exc, "message", None)
+    if not message:
+        message = str(exc)
+    return "No such File object" in message or "not found" in message.lower()

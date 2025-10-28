@@ -66,6 +66,7 @@ class GitSyncFileBackend(SyncFileBackend):
         self._configure_identity()
 
         self._local_backend = LocalFileBackend(root=self._workdir, create_root=True)
+        self._root = self._workdir.resolve()
 
     def create(
         self,
@@ -172,7 +173,7 @@ class GitSyncFileBackend(SyncFileBackend):
             if "U" in code or code in {"AA", "DD"}:
                 conflicts.append(
                     SyncConflict(
-                        path=(self._workdir / rel_path),
+                        path=(self._root / rel_path),
                         status=code.strip(),
                     ),
                 )
@@ -272,16 +273,18 @@ class GitSyncFileBackend(SyncFileBackend):
             raise GitBackendError(message)
 
     def _assert_conflicted(self, rel_path: str) -> None:
-        absolute = (self._workdir / rel_path).resolve()
+        absolute = (self._root / rel_path).resolve()
         conflicts = {conflict.path.resolve() for conflict in self.conflict_report()}
         if absolute not in conflicts:
             message = f"{rel_path} is not currently conflicted"
             raise GitBackendError(message)
 
     def _relative_path(self, path: PathLike) -> str:
-        candidate = (self._workdir / Path(path)).resolve(strict=False)
+        path_obj = Path(path)
+        candidate = path_obj if path_obj.is_absolute() else self._root / path_obj
+        candidate = candidate.resolve(strict=False)
         try:
-            relative = candidate.relative_to(self._workdir)
+            relative = candidate.relative_to(self._root)
         except ValueError as exc:
             raise InvalidOperationError.path_outside_root(candidate) from exc
         return relative.as_posix()
