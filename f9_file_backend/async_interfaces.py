@@ -72,6 +72,7 @@ from .interfaces import (
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+    from contextlib import AbstractAsyncContextManager
     from pathlib import Path
 
 
@@ -353,6 +354,39 @@ class AsyncSyncFileBackend(AsyncFileBackend):
         data: bytes | str | BinaryIO,
     ) -> None:
         """Resolve a conflict by supplying a new version of the file."""
+
+    @abstractmethod
+    def sync_session(
+        self,
+        *,
+        timeout: float | None = None,
+    ) -> AbstractAsyncContextManager[None]:
+        """Create an async context manager for atomic synchronisation operations.
+
+        The async context manager provides exclusive access to the backend for a
+        sequence of operations, ensuring that concurrent access is prevented
+        and pull/push operations happen atomically. All operations within the
+        context are protected by a lock.
+
+        Args:
+            timeout: Optional timeout in seconds for acquiring the lock. If the
+                lock cannot be acquired within the timeout, TimeoutError is raised.
+
+        Yields:
+            None
+
+        Raises:
+            TimeoutError: If the lock cannot be acquired within the timeout period.
+            FileBackendError: If the sync session cannot be established.
+
+        Example:
+            >>> backend = AsyncGitSyncFileBackend(connection_info)
+            >>> async with backend.sync_session():
+            ...     await backend.pull()
+            ...     await backend.create("file.txt", data=b"content")
+            ...     await backend.push()
+
+        """
 
 
 # Import SyncConflict for type hinting

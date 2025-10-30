@@ -92,6 +92,7 @@ from .local import LocalFileBackend
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
+    from contextlib import AbstractContextManager
 
 
 STATUS_LINE_MIN_LENGTH = 3
@@ -331,6 +332,30 @@ class GitSyncFileBackend(SyncFileBackend):
         self._assert_conflicted(rel_path)
         self.update(rel_path, data=data)
         self._run_git(["add", rel_path])
+
+    def sync_session(
+        self,
+        *,
+        timeout: float | None = None,
+    ) -> AbstractContextManager[None]:
+        """Create a context manager for atomic synchronisation operations.
+
+        The context manager provides exclusive access to the backend for a
+        sequence of operations, ensuring that concurrent Git operations
+        (pull/push) happen atomically. Uses the underlying LocalFileBackend's
+        file-based locking mechanism.
+
+        Args:
+            timeout: Optional timeout in seconds for acquiring the lock.
+
+        Returns:
+            Context manager that acquires and releases the lock.
+
+        Raises:
+            TimeoutError: If the lock cannot be acquired within the timeout.
+
+        """
+        return self._local_backend.sync_session(timeout=timeout)
 
     def _clone_repository(self) -> None:
         parent = self._workdir.parent

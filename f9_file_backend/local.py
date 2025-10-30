@@ -77,6 +77,7 @@ from .interfaces import (
     NotFoundError,
     PathLike,
 )
+from .locking import FileLock
 from .utils import accumulate_chunks, coerce_to_bytes, compute_checksum_from_file
 from .validation import (
     LocalPathEntry,
@@ -89,6 +90,7 @@ from .validation import (
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from contextlib import AbstractContextManager
 
 
 class LocalFileBackend(FileBackend):
@@ -107,6 +109,10 @@ class LocalFileBackend(FileBackend):
             self._root.mkdir(parents=True, exist_ok=True)
         elif not self._root.exists():
             raise NotFoundError(self._root)
+
+        # Initialize lock for sync sessions
+        lock_file = self._root / ".backend.lock"
+        self._lock = FileLock(lock_file)
 
     @property
     def root(self) -> Path:
@@ -301,6 +307,28 @@ class LocalFileBackend(FileBackend):
             results.append(match.relative_to(self._root))
 
         return sorted(results)
+
+    def sync_session(
+        self,
+        *,
+        timeout: float | None = None,
+    ) -> AbstractContextManager[None]:
+        """Create a context manager for atomic synchronisation operations.
+
+        For LocalFileBackend, this provides a file-based lock to prevent
+        concurrent access from multiple processes/threads.
+
+        Args:
+            timeout: Optional timeout in seconds for acquiring the lock.
+
+        Returns:
+            Context manager that acquires and releases the lock.
+
+        Raises:
+            TimeoutError: If the lock cannot be acquired within the timeout.
+
+        """
+        return self._lock.acquire(timeout=timeout)
 
     def _compute_checksum(
         self,

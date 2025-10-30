@@ -291,3 +291,32 @@ class AsyncGitSyncFileBackend(AsyncSyncFileBackend):
             path,
             data=data,
         )
+
+    def sync_session(
+        self,
+        *,
+        timeout: float | None = None,
+    ):
+        """Create a context manager for atomic synchronisation operations.
+
+        For the async git backend, returns the synchronous context manager
+        from the underlying GitSyncFileBackend. The caller should use it as a
+        regular context manager (not async context manager).
+
+        Args:
+            timeout: Optional timeout in seconds for acquiring the lock.
+
+        Returns:
+            Context manager that acquires and releases the lock.
+
+        Raises:
+            TimeoutError: If the lock cannot be acquired within the timeout.
+
+        Note:
+            This method is NOT async. Use it in a regular with statement:
+
+            with backend.sync_session():
+                # perform operations
+
+        """
+        return self._sync_backend.sync_session(timeout=timeout)

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, BinaryIO, Literal, Protocol, Union
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from contextlib import AbstractContextManager
     from datetime import datetime
 
 PathLike = Union[str, Path]
@@ -424,3 +425,36 @@ class SyncFileBackend(FileBackend):
         data: bytes | str | BinaryIO,
     ) -> None:
         """Resolve a conflict by supplying a new version of the file."""
+
+    @abstractmethod
+    def sync_session(
+        self,
+        *,
+        timeout: float | None = None,
+    ) -> AbstractContextManager[None]:
+        """Create a context manager for atomic synchronisation operations.
+
+        The context manager provides exclusive access to the backend for a
+        sequence of operations, ensuring that concurrent access is prevented
+        and pull/push operations happen atomically. All operations within the
+        context are protected by a lock.
+
+        Args:
+            timeout: Optional timeout in seconds for acquiring the lock. If the
+                lock cannot be acquired within the timeout, TimeoutError is raised.
+
+        Yields:
+            None
+
+        Raises:
+            TimeoutError: If the lock cannot be acquired within the timeout period.
+            FileBackendError: If the sync session cannot be established.
+
+        Example:
+            >>> backend = GitSyncFileBackend(connection_info)
+            >>> with backend.sync_session():
+            ...     backend.pull()
+            ...     backend.create("file.txt", data=b"content")
+            ...     backend.push()
+
+        """
