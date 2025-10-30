@@ -21,6 +21,12 @@ from .interfaces import (
     NotFoundError,
     PathLike,
 )
+from .path_utils import (
+    detect_path_traversal_posix,
+    normalize_windows_path,
+    validate_not_empty,
+    validate_not_root,
+)
 from .utils import accumulate_chunks, coerce_to_bytes, compute_checksum_from_bytes
 
 if TYPE_CHECKING:
@@ -773,15 +779,13 @@ class OpenAIVectorStoreFileBackend(FileBackend):
     @staticmethod
     def _normalise_path(path: PathLike) -> str:
         """Normalise user-provided paths to POSIX-encoded relative paths."""
-        path_str = str(path).replace("\\", "/")
-        if not path_str or path_str.strip() == "":
-            raise InvalidOperationError.empty_path_not_allowed(path)
+        path_str = normalize_windows_path(str(path))
+        validate_not_empty(path_str)
         pure = PurePosixPath(path_str)
-        if pure.is_absolute() or any(part == ".." for part in pure.parts):
+        if pure.is_absolute() or detect_path_traversal_posix(pure.parts):
             raise InvalidOperationError.path_outside_root(path_str)
         normalised = pure.as_posix()
-        if normalised == ".":
-            raise InvalidOperationError.root_path_not_allowed(path)
+        validate_not_root(normalised)
         return normalised
 
 
