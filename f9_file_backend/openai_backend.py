@@ -1,4 +1,75 @@
-"""OpenAI vector store backed file backend implementation."""
+"""OpenAI vector store backed file backend implementation of FileBackend.
+
+This module provides remote file storage via OpenAI's vector store API.
+Files are stored as embeddings in a vector store accessible via the OpenAI API.
+
+Key Features:
+    - Remote storage via OpenAI API
+    - No local filesystem required
+    - Vector embeddings for semantic search (future)
+    - Cloud-based backup and redundancy
+    - Accessible from anywhere
+
+Path Validation:
+    OpenAIVectorStoreFileBackend uses virtual path validation that doesn't
+    require filesystem access. Paths are normalized to POSIX format and
+    validated using pure path operations.
+
+    All paths are verified to prevent traversal attacks while supporting
+    any path format (Windows, POSIX, mixed).
+
+Storage Mechanism:
+    Files are stored as blobs in an OpenAI vector store. A local index
+    (file tree) is maintained in-memory to track file metadata and enable
+    operations like list() and checksum().
+
+API Integration:
+    - Requires OpenAI API key
+    - Uses openai.OpenAI client
+    - Vector store must be created separately
+    - Handles API rate limiting and retries
+
+Performance Characteristics:
+    - Network I/O bound (API calls)
+    - API latency affects all operations
+    - Suitable for distributed systems
+    - No local disk space required
+
+Example:
+
+    >>> import openai
+    >>> from f9_file_backend import OpenAIVectorStoreFileBackend
+    >>> client = openai.OpenAI(api_key="sk-...")
+    >>> backend = OpenAIVectorStoreFileBackend(
+    ...     client=client,
+    ...     vector_store_id="vs_..."
+    ... )
+
+    >>> # Create and store
+    >>> backend.create("document.txt", data=b"Content")
+
+    >>> # Retrieve
+    >>> content = backend.read("document.txt")
+
+    >>> # List all files
+    >>> files = backend.list("/")
+
+    >>> # Compute checksum
+    >>> checksum = backend.checksum("document.txt")
+
+Exception Handling:
+    Raises OpenAIBackendError for API-specific failures:
+    - Authentication errors
+    - Rate limiting
+    - API service errors
+    - Vector store access errors
+
+See Also:
+    - FileBackend: Abstract interface
+    - LocalFileBackend: Local filesystem alternative
+    - GitSyncFileBackend: Version-controlled alternative
+
+"""
 
 from __future__ import annotations
 
@@ -422,12 +493,26 @@ class OpenAIVectorStoreFileBackend(FileBackend):
         return entries
 
     def _ensure_index(self) -> None:
-        """Refresh the local index when stale or caching disabled."""
+        """Refresh the local index when stale or caching disabled.
+
+        The local index is a dictionary mapping paths to file metadata.
+        This method ensures the index is up-to-date by:
+        1. Checking if sync_interval <= 0 (no caching, always refresh)
+        2. Checking if index hasn't been synced yet (_last_synced is None)
+        3. Checking if enough time has passed since last sync
+
+        This lazy loading pattern avoids fetching the entire file list on
+        every operation while still keeping data reasonably fresh.
+        """
+        # If sync_interval <= 0, caching is disabled - always refresh
         if self._sync_interval <= 0:
             self._refresh_index()
             return
+
+        # Check if index needs refreshing based on time elapsed
         now = time.time()
         if self._last_synced is None or now - self._last_synced >= self._sync_interval:
+            # Index is stale or hasn't been loaded yet - refresh it
             self._refresh_index()
 
     def _vector_store_files_resource(self) -> Any | None:
@@ -767,14 +852,53 @@ class OpenAIVectorStoreFileBackend(FileBackend):
 
     @staticmethod
     def _normalise_path(path: PathLike) -> str:
-        """Normalise user-provided paths to POSIX-encoded relative paths."""
+        """Normalise user-provided paths to POSIX-encoded relative paths.
+
+        This method implements virtual path validation (no filesystem access) that:
+        1. Normalizes Windows backslashes to forward slashes
+        2. Validates path is not empty
+        3. Parses as pure POSIX path (no filesystem access)
+        4. Rejects absolute paths and traversal attempts (..)
+        5. Rejects root path (.)
+        6. Returns normalized POSIX string
+
+        This approach is suitable for remote storage backends where there is
+        no local filesystem to check, but we still need security.
+
+        Args:
+            path: Potentially unsafe path from user input (any format)
+
+        Returns:
+            Normalized POSIX path string, guaranteed relative and within root
+
+        Raises:
+            InvalidOperationError: If path is invalid (absolute, traversal, empty, root)
+
+        """
+        # Normalize Windows path separators to forward slashes
+        # This allows Windows-style paths: "foo\\bar" -> "foo/bar"
         path_str = normalize_windows_path(str(path))
+
+        # Validate path is not empty or whitespace-only
         validate_not_empty(path_str)
+
+        # Parse using PurePosixPath - normalizes path without filesystem access
+        # PurePosixPath resolves . and //, but doesn't follow symlinks or verify
         pure = PurePosixPath(path_str)
+
+        # Security check: reject absolute paths and traversal attempts
+        # is_absolute() catches /foo, //foo, etc.
+        # detect_path_traversal_posix() catches .. components which escape root
         if pure.is_absolute() or detect_path_traversal_posix(pure.parts):
             raise InvalidOperationError.path_outside_root(path_str)
+
+        # Convert back to string representation (POSIX format)
         normalised = pure.as_posix()
+
+        # Final security check: reject paths that resolve to root (.)
+        # This prevents operations on the root directory itself
         validate_not_root(normalised)
+
         return normalised
 
 

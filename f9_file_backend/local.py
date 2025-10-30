@@ -1,4 +1,65 @@
-"""Local filesystem backend implementation."""
+"""Local filesystem backend implementation of FileBackend.
+
+This module provides direct filesystem access for file storage operations.
+All files are stored in a root directory with path traversal protection.
+
+Key Features:
+    - Direct filesystem access with optimal performance
+    - Symlink resolution with traversal prevention
+    - Large file support via streaming operations
+    - Atomic file operations
+    - Directory creation and removal
+
+Path Validation:
+    LocalFileBackend uses filesystem-aware path validation that resolves
+    symlinks and relative paths. This ensures security against path traversal
+    attacks while supporting complex path scenarios.
+
+    All paths are validated to ensure they remain within the configured root
+    directory. The _ensure_within_root() method handles this validation.
+
+Storage Mechanism:
+    Files are stored directly on the filesystem within the specified root
+    directory. Directory structure is created automatically as needed.
+
+Performance Characteristics:
+    - Optimal for local file operations
+    - No network latency
+    - Filesystem I/O bound
+    - Suitable for large files (streaming)
+
+Example:
+
+    >>> from f9_file_backend import LocalFileBackend
+    >>> from pathlib import Path
+    >>> backend = LocalFileBackend(root=Path("/data/files"))
+
+    >>> # Create a file
+    >>> backend.create("document.txt", data=b"Hello, world!")
+
+    >>> # Read file contents
+    >>> content = backend.read("document.txt")
+    >>> content
+    b'Hello, world!'
+
+    >>> # Stream large files
+    >>> with open("large.bin", "rb") as f:
+    ...     backend.create("large_copy.bin", data=f)
+
+    >>> # Get file info
+    >>> info = backend.info("document.txt")
+    >>> info.size
+    13
+
+    >>> # Compute checksums
+    >>> checksum = backend.checksum("document.txt")
+
+See Also:
+    - FileBackend: Abstract interface
+    - GitSyncFileBackend: Adds Git version control
+    - OpenAIVectorStoreFileBackend: Remote storage alternative
+
+"""
 
 from __future__ import annotations
 
@@ -223,11 +284,35 @@ class LocalFileBackend(FileBackend):
         return compute_checksum_from_file(file_path, algorithm=algorithm)
 
     def _ensure_within_root(self, path: PathLike) -> Path:
+        """Validate path stays within root directory with symlink resolution.
+
+        This method implements filesystem-aware path validation that:
+        1. Combines the path with root and resolves it (symlinks follow, .. resolved)
+        2. Verifies the resolved path is still within the root directory
+        3. Prevents path traversal attacks including symlink escapes
+
+        Args:
+            path: Potentially unsafe path from user input
+
+        Returns:
+            Absolute Path that is guaranteed to be within self._root
+
+        Raises:
+            InvalidOperationError: If path escapes root (including via symlinks)
+
+        """
+        # Resolve the full path: combines root with user path, follows symlinks,
+        # resolves .. strict=False allows paths that don't exist yet (for create)
         candidate = (self._root / Path(path)).resolve(strict=False)
+
+        # Verify the resolved path is still within root by trying to get relative path
+        # This catches: ../../etc/passwd, symlink escapes, absolute paths that escape
         try:
             candidate.relative_to(self._root)
         except ValueError as exc:
+            # Path is outside root - security violation
             raise InvalidOperationError.path_outside_root(candidate) from exc
+
         return candidate
 
     _coerce_bytes = staticmethod(coerce_to_bytes)

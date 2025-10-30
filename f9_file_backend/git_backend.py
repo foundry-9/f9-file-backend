@@ -1,4 +1,72 @@
-"""Git-backed synchronised file backend implementation."""
+"""Git-backed synchronised file backend implementation of FileBackend.
+
+This module provides version-controlled file storage with Git integration.
+All file operations are automatically committed and optionally synced to remote.
+
+Key Features:
+    - Automatic Git commits for all file operations
+    - Optional push to remote repository
+    - Git history tracking
+    - Conflict detection on sync
+    - Works with any Git hosting service
+
+Path Validation:
+    GitSyncFileBackend uses filesystem-aware path validation similar to
+    LocalFileBackend. Paths are resolved against the filesystem and verified
+    to stay within the configured root directory.
+
+Storage Mechanism:
+    Files are stored in a Git repository at the configured root directory.
+    Each operation (create, update, delete) is committed with a descriptive
+    message and optionally pushed to the remote.
+
+Git Integration:
+    - Requires Git to be installed and configured
+    - Supports authentication via standard Git mechanisms (SSH, HTTPS tokens)
+    - Handles merge conflicts when syncing with remote
+    - Maintains full Git history for audit trails
+
+Performance Characteristics:
+    - Slower than LocalFileBackend due to Git operations
+    - Network latency for push operations
+    - Disk I/O for commits and history
+
+Example:
+
+    >>> from f9_file_backend import GitSyncFileBackend
+    >>> backend = GitSyncFileBackend(
+    ...     root="/data/repo",
+    ...     git_config={
+    ...         "user.name": "Bot",
+    ...         "user.email": "bot@example.com"
+    ...     },
+    ...     auto_commit=True,
+    ...     auto_push=False
+    ... )
+
+    >>> # Create and auto-commit
+    >>> backend.create("README.md", data=b"# Project")
+    >>> # Git commit created automatically
+
+    >>> # Read from Git history
+    >>> content = backend.read("README.md")
+
+    >>> # Sync with remote
+    >>> backend.sync()
+
+Exception Handling:
+    Raises GitOperationError for Git-specific failures:
+    - Repository initialization errors
+    - Commit failures
+    - Push/pull failures
+    - Merge conflicts
+
+See Also:
+    - FileBackend: Abstract interface
+    - LocalFileBackend: Non-versioned filesystem alternative
+    - OpenAIVectorStoreFileBackend: Remote storage alternative
+
+"""
 
 from __future__ import annotations
 
