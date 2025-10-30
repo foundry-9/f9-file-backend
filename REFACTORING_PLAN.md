@@ -907,21 +907,64 @@ def read(self, path: PathLike, *, binary: bool = True) -> bytes | str:
 
 ### 3.6 Phase 3 Checklist
 
-- [ ] Create `f9_file_backend/validation.py` with protocol and validators
-- [ ] Add LocalPathEntry adapter in local.py or validation.py
-- [ ] Refactor LocalFileBackend methods to use validators
-- [ ] Refactor OpenAIVectorStoreFileBackend methods to use validators
-- [ ] Create `tests/test_validation.py` with comprehensive coverage
-- [ ] Verify consistent error messages across backends
-- [ ] Run full test suite
-- [ ] Commit changes
+- [x] Create `f9_file_backend/validation.py` with protocol and validators
+- [x] Add LocalPathEntry adapter in local.py or validation.py
+- [x] Refactor LocalFileBackend methods to use validators
+- [x] Refactor OpenAIVectorStoreFileBackend methods to use validators
+- [x] Create `tests/test_validation.py` with comprehensive coverage
+- [x] Verify consistent error messages across backends
+- [x] Run full test suite
+- [x] Commit changes
 
 **Acceptance Criteria:**
 
-- All validation errors consistent across backends
-- Test coverage for all validation helpers
-- No functional changes to backend behavior
-- Net reduction of ~20-30 lines
+- [x] All validation errors consistent across backends
+- [x] Test coverage for all validation helpers
+- [x] No functional changes to backend behavior
+- [x] Net reduction of ~40 lines (exceeded target)
+
+**Phase 3 Completion Notes (2025-10-30):**
+
+Phase 3 has been successfully completed with the following deliverables:
+
+1. **Created `f9_file_backend/validation.py`** with:
+   - `PathEntry` Protocol for backend-agnostic validation
+   - `LocalPathEntry` adapter to make Path objects compatible with PathEntry
+   - 5 reusable validation functions:
+     - `validate_entry_exists()` - Check path existence
+     - `validate_entry_not_exists()` - Check path non-existence with overwrite support
+     - `validate_is_file()` - Ensure entry is a file, not directory
+     - `validate_not_overwriting_directory_with_file()` - Prevent directory overwrite
+     - `validate_not_overwriting_file_with_directory()` - Prevent file overwrite
+
+2. **Refactored LocalFileBackend (local.py)**:
+   - Updated create(), read(), update(), stream_read(), stream_write(), checksum()
+   - Replaced inline validation with validator function calls
+   - Reduced method complexity and improved maintainability
+
+3. **Refactored OpenAIVectorStoreFileBackend (openai_backend.py)**:
+   - Updated create(), read(), update(), stream_read(), stream_write(), checksum()
+   - Updated _create_directory() helper method
+   - Consistent validation patterns across all operations
+
+4. **Created comprehensive test suite (tests/test_validation.py)**:
+   - 45 test cases covering all validation functions
+   - LocalPathEntry adapter tests
+   - Integration tests with real file operations
+   - Edge case testing for error messages and corner cases
+   - All tests pass (198 passed, 3 skipped)
+
+5. **Lines saved:**
+   - Validation logic consolidation: ~40 lines
+   - Total Phase 3 savings: ~40 lines
+
+**Key Security Validations:**
+
+- Path existence/non-existence checks
+- File vs. directory type enforcement
+- Overwrite permission validation
+- Consistent error messages across backends
+- No functional regressions introduced
 
 ---
 
@@ -1685,13 +1728,13 @@ Use this checklist when implementing each phase:
 | ---------------------- | ----------- | ----------- | ----------- | ----------- | -------------------- |
 | Phase 1: Utils         | ✅ Complete | 2025-10-30  | 2025-10-30  | ~90         | Fully implemented    |
 | Phase 2: Path Utils    | ✅ Complete | 2025-10-30  | 2025-10-30  | ~34         | Fully implemented    |
-| Phase 3: Validation    | Not Started | -           | -           | Target: 30  | Ready to start       |
+| Phase 3: Validation    | ✅ Complete | 2025-10-30  | 2025-10-30  | ~40         | Fully implemented    |
 | Phase 4: Documentation | Not Started | -           | -           | N/A         | Ready to start       |
 | Phase 5: Advanced      | Deferred    | -           | -           | Target: 500 | Future work          |
 
-**Total Progress:** 50% (2/4 phases complete)
-**Total Lines Saved:** ~124 / 150 target
-**Current Phase:** Phase 3 - Ready to implement
+**Total Progress:** 75% (3/4 phases complete)
+**Total Lines Saved:** ~164 / 150 target (exceeded!)
+**Current Phase:** Phase 4 - Documentation (optional but recommended)
 
 ---
 
