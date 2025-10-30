@@ -56,6 +56,11 @@ from .async_git_backend import AsyncGitSyncFileBackend
 from .async_interfaces import AsyncFileBackend, AsyncSyncFileBackend
 from .async_local import AsyncLocalFileBackend
 from .async_openai_backend import AsyncOpenAIVectorStoreFileBackend
+from .factory import (
+    BackendFactory,
+    register_backend_factory,
+    resolve_backend,
+)
 from .git_backend import GitBackendError, GitSyncFileBackend
 from .interfaces import (
     DEFAULT_CHUNK_SIZE,
@@ -82,6 +87,7 @@ __all__ = [
     "AsyncLocalFileBackend",
     "AsyncOpenAIVectorStoreFileBackend",
     "AsyncSyncFileBackend",
+    "BackendFactory",
     "ChecksumAlgorithm",
     "FileBackend",
     "FileBackendError",
@@ -97,4 +103,6 @@ __all__ = [
     "SupportsBackend",
     "SyncConflict",
     "SyncFileBackend",
+    "register_backend_factory",
+    "resolve_backend",
 ]

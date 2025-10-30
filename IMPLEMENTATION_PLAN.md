@@ -12,8 +12,8 @@ This document provides a detailed implementation plan for adding 10 new features
 
 ## Implementation Progress
 
-**Overall Status**: Phase 1 (High-Priority) - COMPLETE ✅ | Phase 2 (Medium-Priority) - IN PROGRESS 🔄
-**Completed Features**: Phase 1: 3 of 3 | Phase 2: 2 of 3
+**Overall Status**: Phase 1 (High-Priority) - COMPLETE ✅ | Phase 2 (Medium-Priority) - COMPLETE ✅
+**Completed Features**: Phase 1: 3 of 3 | Phase 2: 3 of 3
 
 ### Phase 1 Status
 
@@ -29,7 +29,7 @@ This document provides a detailed implementation plan for adding 10 new features
 |---------|--------|---------------|---|
 | Feature 4: Pattern Matching (Glob) | ✅ COMPLETE | ~4 hours | 46 tests (100% passing) |
 | Feature 5: Atomic Operations (Sync Sessions) | ✅ COMPLETE | ~3 hours | 21 unit tests + 14 integration tests (100% passing) |
-| Feature 6: URI-Based Backend Factory | ⏳ PENDING | TBD | TBD |
+| Feature 6: URI-Based Backend Factory | ✅ COMPLETE | ~2 hours | 31 tests (100% passing) |
 
 ### Feature 1: Streaming/Chunked I/O (COMPLETED ✅)
 
@@ -725,6 +725,92 @@ f9_file_backend/
   - `msvcrt` (Windows systems)
   - `contextlib` for context managers
   - `threading` for process tracking
+
+---
+
+### Feature 6: URI-Based Backend Factory/Resolution (COMPLETED ✅)
+
+**Completion Date**: 2025-10-30
+**Estimated Effort**: 10-15 hours
+**Actual Effort**: ~2 hours (ahead of schedule)
+
+#### Implementation Details
+
+1. **factory.py** - New backend factory module:
+   - `BackendFactory` class with URI parsing and resolution
+   - `parse_uri()` method supporting urlparse with query parameters
+   - `resolve()` method to instantiate backends from URIs
+   - `register()` method for custom backend factory registration
+   - Built-in URI scheme handlers for all backends
+
+2. **URI Scheme Support**:
+   - `file://path` - LocalFileBackend for local filesystem
+   - `git+ssh://url@branch` - GitSyncFileBackend over SSH with optional auth
+   - `git+https://url@branch` - GitSyncFileBackend over HTTPS with credentials
+   - `openai+vector://vs_id` - OpenAIVectorStoreFileBackend with API configuration
+
+3. **Query Parameter Support**:
+   - `file://path?create_root=false` - Control directory creation
+   - `git+ssh://url@branch?author_name=Bot&author_email=bot@example.com` - Custom Git metadata
+   - `openai+vector://vs_id?api_key=sk_xxx&cache_ttl=5&purpose=custom` - OpenAI configuration
+
+4. **init.py** - Public API exports:
+   - `BackendFactory` class for custom factory implementations
+   - `resolve_backend()` convenience function for default factory
+   - `register_backend_factory()` for registering custom schemes
+
+#### Test Coverage
+
+- **Unit Tests** (17 tests): URI parsing, backend instantiation, error handling
+- **Edge Cases** (8 tests): Multiple parameters, custom authors, invalid inputs
+- **Integration Tests** (6 tests): Real backend creation and usage
+- **Total Tests**: 31 new tests, 100% passing
+- **No Regressions**: All 326 existing tests still passing (357 total passed, 8 skipped)
+
+#### Key Features Delivered
+
+✅ URI-based backend factory pattern
+✅ Support for all three backend types (Local, Git, OpenAI)
+✅ Extensible factory for custom schemes
+✅ Query parameter parsing and validation
+✅ Git authentication options (SSH keys, HTTPS credentials)
+✅ OpenAI configuration through URI parameters
+✅ Error handling with clear error messages
+✅ Proper path normalization and security
+✅ Module-level convenience functions
+
+#### Usage Examples
+
+```python
+# Local filesystem backend
+from f9_file_backend import resolve_backend
+
+backend = resolve_backend("file:///data/files")
+backend.create("file.txt", data=b"Hello")
+
+# Git SSH backend
+backend = resolve_backend("git+ssh://github.com/user/repo@main")
+
+# Git HTTPS backend with credentials
+backend = resolve_backend(
+    "git+https://github.com/user/repo@develop?"
+    "username=user&password=token&author_name=Bot"
+)
+
+# OpenAI vector store backend
+backend = resolve_backend("openai+vector://vs_123?api_key=sk_xxx")
+
+# Custom backend registration
+from f9_file_backend import register_backend_factory
+register_backend_factory("s3", my_s3_factory)
+```
+
+#### Factory Dependencies
+
+- **No new dependencies** - Uses Python's built-in:
+  - `urllib.parse` for URI parsing
+  - `pathlib` for path operations
+  - Existing backend implementations
 
 ---
 
