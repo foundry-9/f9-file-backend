@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any, BinaryIO
 
 from .interfaces import (
     DEFAULT_CHUNK_SIZE,
-    AlreadyExistsError,
     ChecksumAlgorithm,
     FileBackend,
     FileBackendError,
@@ -28,6 +27,13 @@ from .path_utils import (
     validate_not_root,
 )
 from .utils import accumulate_chunks, coerce_to_bytes, compute_checksum_from_bytes
+from .validation import (
+    validate_entry_exists,
+    validate_entry_not_exists,
+    validate_is_file,
+    validate_not_overwriting_directory_with_file,
+    validate_not_overwriting_file_with_directory,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -197,13 +203,9 @@ class OpenAIVectorStoreFileBackend(FileBackend):
         self._ensure_parent_directories(path_str)
 
         existing = self._index.get(path_str)
+        validate_not_overwriting_directory_with_file(existing, path_str)
+        validate_entry_not_exists(existing, path_str, overwrite=overwrite)
         if existing:
-            if existing.is_dir:
-                raise InvalidOperationError.cannot_overwrite_directory_with_file(
-                    path_str,
-                )
-            if not overwrite:
-                raise AlreadyExistsError(path_str)
             self._remove_entry(existing)
 
         entry = self._persist_entry(path_str, payload, is_dir=False)
@@ -220,10 +222,8 @@ class OpenAIVectorStoreFileBackend(FileBackend):
         self._ensure_index()
 
         entry = self._index.get(path_str)
-        if entry is None:
-            raise NotFoundError(path_str)
-        if entry.is_dir:
-            raise InvalidOperationError.cannot_read_directory(path_str)
+        validate_entry_exists(entry, path_str)
+        validate_is_file(entry, path_str)
 
         payload = self._download_entry(entry)
         if binary:
@@ -242,10 +242,8 @@ class OpenAIVectorStoreFileBackend(FileBackend):
         self._ensure_index()
 
         entry = self._index.get(path_str)
-        if entry is None:
-            raise NotFoundError(path_str)
-        if entry.is_dir:
-            raise InvalidOperationError.cannot_update_directory(path_str)
+        validate_entry_exists(entry, path_str)
+        validate_is_file(entry, path_str)
 
         incoming = self._coerce_bytes(data)
         if append:
@@ -300,10 +298,8 @@ class OpenAIVectorStoreFileBackend(FileBackend):
         self._ensure_index()
 
         entry = self._index.get(path_str)
-        if entry is None:
-            raise NotFoundError(path_str)
-        if entry.is_dir:
-            raise InvalidOperationError.cannot_read_directory(path_str)
+        validate_entry_exists(entry, path_str)
+        validate_is_file(entry, path_str)
 
         payload = self._download_entry(entry)
 
@@ -327,13 +323,9 @@ class OpenAIVectorStoreFileBackend(FileBackend):
         self._ensure_index()
 
         existing = self._index.get(path_str)
+        validate_not_overwriting_directory_with_file(existing, path_str)
+        validate_entry_not_exists(existing, path_str, overwrite=overwrite)
         if existing:
-            if existing.is_dir:
-                raise InvalidOperationError.cannot_overwrite_directory_with_file(
-                    path_str,
-                )
-            if not overwrite:
-                raise AlreadyExistsError(path_str)
             self._remove_entry(existing)
 
         self._ensure_parent_directories(path_str)
@@ -353,10 +345,8 @@ class OpenAIVectorStoreFileBackend(FileBackend):
         path_str = self._normalise_path(path)
 
         entry = self._index.get(path_str)
-        if not entry:
-            raise NotFoundError(path_str)
-        if entry.is_dir:
-            raise InvalidOperationError.cannot_read_directory(path_str)
+        validate_entry_exists(entry, path_str)
+        validate_is_file(entry, path_str)
 
         # Download the file content and compute checksum
         payload = self._download_file_content(entry.file_id)
@@ -397,9 +387,8 @@ class OpenAIVectorStoreFileBackend(FileBackend):
         """Create or return an existing directory placeholder."""
         self._ensure_parent_directories(path)
         existing = self._index.get(path)
+        validate_not_overwriting_file_with_directory(existing, path)
         if existing:
-            if not existing.is_dir:
-                raise InvalidOperationError.cannot_overwrite_file_with_directory(path)
             return self._entry_to_info(existing)
 
         entry = self._persist_entry(path, b"", is_dir=True)

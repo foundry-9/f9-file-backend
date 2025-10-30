@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, BinaryIO
 
 from .interfaces import (
     DEFAULT_CHUNK_SIZE,
-    AlreadyExistsError,
     ChecksumAlgorithm,
     FileBackend,
     FileInfo,
@@ -18,6 +17,14 @@ from .interfaces import (
     PathLike,
 )
 from .utils import accumulate_chunks, coerce_to_bytes, compute_checksum_from_file
+from .validation import (
+    LocalPathEntry,
+    validate_entry_exists,
+    validate_entry_not_exists,
+    validate_is_file,
+    validate_not_overwriting_directory_with_file,
+    validate_not_overwriting_file_with_directory,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -55,20 +62,17 @@ class LocalFileBackend(FileBackend):
     ) -> FileInfo:
         """Create a file or directory relative to the backend root."""
         target = self._ensure_within_root(path)
-        if target.exists() and not overwrite:
-            raise AlreadyExistsError(target)
+        entry = LocalPathEntry.from_path(target)
 
         target.parent.mkdir(parents=True, exist_ok=True)
 
         if is_directory:
-            if target.exists() and not target.is_dir():
-                raise InvalidOperationError.cannot_overwrite_file_with_directory(target)
+            validate_not_overwriting_file_with_directory(entry, target)
+            validate_entry_not_exists(entry, target, overwrite=overwrite)
             target.mkdir(exist_ok=True)
         else:
-            if target.exists() and target.is_dir():
-                raise InvalidOperationError.cannot_overwrite_directory_with_file(
-                    target,
-                )
+            validate_not_overwriting_directory_with_file(entry, target)
+            validate_entry_not_exists(entry, target, overwrite=overwrite)
             payload = self._coerce_bytes(data) if data is not None else b""
             with target.open("wb") as fh:
                 fh.write(payload)
@@ -82,10 +86,9 @@ class LocalFileBackend(FileBackend):
     ) -> bytes | str:
         """Return file contents as bytes or text."""
         target = self._ensure_within_root(path)
-        if not target.exists():
-            raise NotFoundError(target)
-        if target.is_dir():
-            raise InvalidOperationError.cannot_read_directory(target)
+        entry = LocalPathEntry.from_path(target)
+        validate_entry_exists(entry, target)
+        validate_is_file(entry, target)
 
         mode = "rb" if binary else "r"
         with target.open(mode) as fh:
@@ -100,10 +103,9 @@ class LocalFileBackend(FileBackend):
     ) -> FileInfo:
         """Write new data to an existing file."""
         target = self._ensure_within_root(path)
-        if not target.exists():
-            raise NotFoundError(target)
-        if target.is_dir():
-            raise InvalidOperationError.cannot_update_directory(target)
+        entry = LocalPathEntry.from_path(target)
+        validate_entry_exists(entry, target)
+        validate_is_file(entry, target)
 
         payload = self._coerce_bytes(data)
         mode = "ab" if append else "wb"
@@ -148,10 +150,9 @@ class LocalFileBackend(FileBackend):
     ) -> Iterator[bytes | str]:
         """Stream file contents in chunks."""
         target = self._ensure_within_root(path)
-        if not target.exists():
-            raise NotFoundError(target)
-        if target.is_dir():
-            raise InvalidOperationError.cannot_read_directory(target)
+        entry = LocalPathEntry.from_path(target)
+        validate_entry_exists(entry, target)
+        validate_is_file(entry, target)
 
         mode = "rb" if binary else "r"
         with target.open(mode) as fh:
@@ -171,13 +172,11 @@ class LocalFileBackend(FileBackend):
     ) -> FileInfo:
         """Write file from stream."""
         target = self._ensure_within_root(path)
-        if target.exists() and not overwrite:
-            raise AlreadyExistsError(target)
+        entry = LocalPathEntry.from_path(target)
+        validate_not_overwriting_directory_with_file(entry, target)
+        validate_entry_not_exists(entry, target, overwrite=overwrite)
 
         target.parent.mkdir(parents=True, exist_ok=True)
-
-        if target.exists() and target.is_dir():
-            raise InvalidOperationError.cannot_overwrite_directory_with_file(target)
 
         payload = accumulate_chunks(chunk_source, chunk_size)
         target.write_bytes(payload)
@@ -191,10 +190,9 @@ class LocalFileBackend(FileBackend):
     ) -> str:
         """Compute a file checksum using the specified algorithm."""
         target = self._ensure_within_root(path)
-        if not target.exists():
-            raise NotFoundError(target)
-        if target.is_dir():
-            raise InvalidOperationError.cannot_read_directory(target)
+        entry = LocalPathEntry.from_path(target)
+        validate_entry_exists(entry, target)
+        validate_is_file(entry, target)
 
         return self._compute_checksum(target, algorithm)
 
