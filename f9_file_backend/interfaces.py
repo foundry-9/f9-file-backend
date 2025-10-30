@@ -8,9 +8,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, BinaryIO, Protocol, Union
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from datetime import datetime
 
 PathLike = Union[str, Path]
+
+DEFAULT_CHUNK_SIZE = 8192
 
 
 class FileBackendError(RuntimeError):
@@ -208,6 +211,48 @@ class FileBackend(ABC):
 
         Args:
             path: Target path relative to the backend root.
+
+        """
+
+    @abstractmethod
+    def stream_read(
+        self,
+        path: PathLike,
+        *,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        binary: bool = True,
+    ) -> Iterator[bytes | str]:
+        """Stream file contents in chunks.
+
+        Args:
+            path: Target file path relative to the backend root.
+            chunk_size: Number of bytes to read per iteration.
+            binary: When False, chunks should be decoded as UTF-8 text.
+
+        Yields:
+            Chunks of file content as bytes or str depending on binary flag.
+
+        """
+
+    @abstractmethod
+    def stream_write(
+        self,
+        path: PathLike,
+        *,
+        chunk_source: Iterator[bytes | str] | BinaryIO,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        overwrite: bool = False,
+    ) -> FileInfo:
+        """Write file from stream.
+
+        Args:
+            path: Target file path relative to the backend root.
+            chunk_source: Iterator or file-like object providing chunks to write.
+            chunk_size: Chunk size hint (used when reading from iterators).
+            overwrite: Replace existing files if True.
+
+        Returns:
+            FileInfo describing the newly written resource.
 
         """
 

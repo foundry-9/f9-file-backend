@@ -2,6 +2,7 @@
 
 from .git_backend import GitBackendError, GitSyncFileBackend
 from .interfaces import (
+    DEFAULT_CHUNK_SIZE,
     AlreadyExistsError,
     FileBackend,
     FileBackendError,
@@ -17,6 +18,7 @@ from .local import LocalFileBackend
 from .openai_backend import OpenAIBackendError, OpenAIVectorStoreFileBackend
 
 __all__ = [
+    "DEFAULT_CHUNK_SIZE",
     "AlreadyExistsError",
     "FileBackend",
     "FileBackendError",

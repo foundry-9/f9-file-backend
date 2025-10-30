@@ -6,9 +6,10 @@ import io
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import BinaryIO
+from typing import TYPE_CHECKING, BinaryIO
 
 from .interfaces import (
+    DEFAULT_CHUNK_SIZE,
     AlreadyExistsError,
     FileBackend,
     FileInfo,
@@ -16,6 +17,9 @@ from .interfaces import (
     NotFoundError,
     PathLike,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 class LocalFileBackend(FileBackend):
@@ -133,6 +137,65 @@ class LocalFileBackend(FileBackend):
             created_at=_timestamp_to_datetime(stat_result.st_ctime),
             modified_at=_timestamp_to_datetime(stat_result.st_mtime),
         )
+
+    def stream_read(
+        self,
+        path: PathLike,
+        *,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        binary: bool = True,
+    ) -> Iterator[bytes | str]:
+        """Stream file contents in chunks."""
+        target = self._ensure_within_root(path)
+        if not target.exists():
+            raise NotFoundError(target)
+        if target.is_dir():
+            raise InvalidOperationError.cannot_read_directory(target)
+
+        mode = "rb" if binary else "r"
+        with target.open(mode) as fh:
+            while True:
+                chunk = fh.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
+
+    def stream_write(
+        self,
+        path: PathLike,
+        *,
+        chunk_source: Iterator[bytes | str] | BinaryIO,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        overwrite: bool = False,
+    ) -> FileInfo:
+        """Write file from stream."""
+        target = self._ensure_within_root(path)
+        if target.exists() and not overwrite:
+            raise AlreadyExistsError(target)
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        if target.exists() and target.is_dir():
+            raise InvalidOperationError.cannot_overwrite_directory_with_file(target)
+
+        with target.open("wb") as fh:
+            if hasattr(chunk_source, "read"):
+                while True:
+                    chunk = chunk_source.read(chunk_size)
+                    if not chunk:
+                        break
+                    if isinstance(chunk, str):
+                        fh.write(chunk.encode("utf-8"))
+                    else:
+                        fh.write(chunk)
+            else:
+                for chunk in chunk_source:
+                    if isinstance(chunk, str):
+                        fh.write(chunk.encode("utf-8"))
+                    else:
+                        fh.write(chunk)
+
+        return self.info(target)
 
     def _ensure_within_root(self, path: PathLike) -> Path:
         candidate = (self._root / Path(path)).resolve(strict=False)

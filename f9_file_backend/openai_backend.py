@@ -8,13 +8,10 @@ import inspect
 import io
 import mimetypes
 import time
-from collections.abc import Mapping
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from pathlib import Path, PurePosixPath
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 from .interfaces import (
+    DEFAULT_CHUNK_SIZE,
     AlreadyExistsError,
     FileBackend,
     FileBackendError,
@@ -23,6 +20,15 @@ from .interfaces import (
     NotFoundError,
     PathLike,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping
+else:
+    from collections.abc import Mapping
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
 
 
 @dataclass
@@ -272,6 +278,77 @@ class OpenAIVectorStoreFileBackend(FileBackend):
         entry = self._index.get(path_str)
         if entry is None:
             raise NotFoundError(path_str)
+        return self._entry_to_info(entry)
+
+    def stream_read(
+        self,
+        path: PathLike,
+        *,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        binary: bool = True,
+    ) -> Iterator[bytes | str]:
+        """Stream file contents in chunks from the vector store."""
+        path_str = self._normalise_path(path)
+        self._ensure_index()
+
+        entry = self._index.get(path_str)
+        if entry is None:
+            raise NotFoundError(path_str)
+        if entry.is_dir:
+            raise InvalidOperationError.cannot_read_directory(path_str)
+
+        payload = self._download_entry(entry)
+
+        for i in range(0, len(payload), chunk_size):
+            chunk = payload[i : i + chunk_size]
+            if binary:
+                yield chunk
+            else:
+                yield chunk.decode("utf-8")
+
+    def stream_write(
+        self,
+        path: PathLike,
+        *,
+        chunk_source: Iterator[bytes | str] | BinaryIO,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        overwrite: bool = False,
+    ) -> FileInfo:
+        """Write file from stream to the vector store."""
+        path_str = self._normalise_path(path)
+        self._ensure_index()
+
+        existing = self._index.get(path_str)
+        if existing:
+            if existing.is_dir:
+                raise InvalidOperationError.cannot_overwrite_directory_with_file(
+                    path_str,
+                )
+            if not overwrite:
+                raise AlreadyExistsError(path_str)
+            self._remove_entry(existing)
+
+        self._ensure_parent_directories(path_str)
+
+        accumulated = io.BytesIO()
+        if hasattr(chunk_source, "read"):
+            while True:
+                chunk = chunk_source.read(chunk_size)
+                if not chunk:
+                    break
+                if isinstance(chunk, str):
+                    accumulated.write(chunk.encode("utf-8"))
+                else:
+                    accumulated.write(chunk)
+        else:
+            for chunk in chunk_source:
+                if isinstance(chunk, str):
+                    accumulated.write(chunk.encode("utf-8"))
+                else:
+                    accumulated.write(chunk)
+
+        payload = accumulated.getvalue()
+        entry = self._persist_entry(path_str, payload, is_dir=False)
         return self._entry_to_info(entry)
 
     def _create_directory(self, path: str) -> FileInfo:

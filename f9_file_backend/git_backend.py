@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO
 from urllib.parse import quote, urlparse, urlunparse
 
 from .interfaces import (
+    DEFAULT_CHUNK_SIZE,
     AlreadyExistsError,
     FileBackendError,
     FileInfo,
@@ -21,7 +22,7 @@ from .interfaces import (
 from .local import LocalFileBackend
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterator, Mapping
 
 
 STATUS_LINE_MIN_LENGTH = 3
@@ -110,6 +111,36 @@ class GitSyncFileBackend(SyncFileBackend):
     def info(self, path: PathLike) -> FileInfo:
         """Return file metadata from the working tree."""
         return self._local_backend.info(path)
+
+    def stream_read(
+        self,
+        path: PathLike,
+        *,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        binary: bool = True,
+    ) -> Iterator[bytes | str]:
+        """Stream file contents in chunks from the working tree."""
+        return self._local_backend.stream_read(
+            path,
+            chunk_size=chunk_size,
+            binary=binary,
+        )
+
+    def stream_write(
+        self,
+        path: PathLike,
+        *,
+        chunk_source: Iterator[bytes | str] | BinaryIO,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        overwrite: bool = False,
+    ) -> FileInfo:
+        """Write file from stream to the working tree."""
+        return self._local_backend.stream_write(
+            path,
+            chunk_source=chunk_source,
+            chunk_size=chunk_size,
+            overwrite=overwrite,
+        )
 
     def push(self, *, message: str | None = None) -> None:
         """Commit local changes (if any) and push to the remote repository."""
