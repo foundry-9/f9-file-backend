@@ -52,6 +52,10 @@ See Also:
 
 """
 
+from .async_git_backend import AsyncGitSyncFileBackend
+from .async_interfaces import AsyncFileBackend, AsyncSyncFileBackend
+from .async_local import AsyncLocalFileBackend
+from .async_openai_backend import AsyncOpenAIVectorStoreFileBackend
 from .git_backend import GitBackendError, GitSyncFileBackend
 from .interfaces import (
     DEFAULT_CHUNK_SIZE,
@@ -73,6 +77,11 @@ from .openai_backend import OpenAIBackendError, OpenAIVectorStoreFileBackend
 __all__ = [
     "DEFAULT_CHUNK_SIZE",
     "AlreadyExistsError",
+    "AsyncFileBackend",
+    "AsyncGitSyncFileBackend",
+    "AsyncLocalFileBackend",
+    "AsyncOpenAIVectorStoreFileBackend",
+    "AsyncSyncFileBackend",
     "ChecksumAlgorithm",
     "FileBackend",
     "FileBackendError",

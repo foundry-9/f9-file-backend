@@ -1,0 +1,15 @@
+
+[all]
+blake3>=0.3
+openai>=1.0
+pytest-asyncio>=0.21
+
+[checksum]
+blake3>=0.3
+
+[openai]
+openai>=1.0
+
+[test]
+pytest>=8.0
+pytest-asyncio>=0.21
