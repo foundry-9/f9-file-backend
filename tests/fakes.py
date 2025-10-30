@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
+from f9_file_backend.utils import coerce_to_bytes
+
 
 @dataclass
 class _StoredFile:
@@ -110,27 +112,7 @@ class _FilesAPI:
         record = self._client._files[file_id]
         return io.BytesIO(record.content)
 
-    @staticmethod
-    def _coerce_bytes(source: Any) -> bytes:
-        """Coerce supported file inputs to bytes."""
-        if isinstance(source, bytes):
-            return source
-        if isinstance(source, bytearray):
-            return bytes(source)
-        if hasattr(source, "read"):
-            data = source.read()
-            if hasattr(source, "seek"):
-                source.seek(0)
-            if isinstance(data, str):
-                return data.encode("utf-8")
-            if isinstance(data, (bytes, bytearray)):
-                return bytes(data)
-            message = f"Unsupported stream payload type: {type(data).__name__}"
-            raise TypeError(message)
-        if isinstance(source, str):
-            return source.encode("utf-8")
-        message = f"Unsupported file upload type: {type(source).__name__}"
-        raise TypeError(message)
+    _coerce_bytes = staticmethod(coerce_to_bytes)
 
 
 class _VectorStoresAPI:

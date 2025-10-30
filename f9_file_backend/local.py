@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import io
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +17,7 @@ from .interfaces import (
     NotFoundError,
     PathLike,
 )
+from .utils import accumulate_chunks, coerce_to_bytes, compute_checksum_from_file
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -180,23 +179,8 @@ class LocalFileBackend(FileBackend):
         if target.exists() and target.is_dir():
             raise InvalidOperationError.cannot_overwrite_directory_with_file(target)
 
-        with target.open("wb") as fh:
-            if hasattr(chunk_source, "read"):
-                while True:
-                    chunk = chunk_source.read(chunk_size)
-                    if not chunk:
-                        break
-                    if isinstance(chunk, str):
-                        fh.write(chunk.encode("utf-8"))
-                    else:
-                        fh.write(chunk)
-            else:
-                for chunk in chunk_source:
-                    if isinstance(chunk, str):
-                        fh.write(chunk.encode("utf-8"))
-                    else:
-                        fh.write(chunk)
-
+        payload = accumulate_chunks(chunk_source, chunk_size)
+        target.write_bytes(payload)
         return self.info(target)
 
     def checksum(
@@ -238,29 +222,7 @@ class LocalFileBackend(FileBackend):
         algorithm: ChecksumAlgorithm,
     ) -> str:
         """Compute the checksum of a file using the specified algorithm."""
-        if algorithm == "blake3":
-            try:
-                import blake3
-            except ImportError as exc:
-                message = (
-                    "blake3 is not installed. Install it with: pip install blake3"
-                )
-                raise ImportError(message) from exc
-            hasher = blake3.blake3()
-        elif algorithm in ("md5", "sha256", "sha512"):
-            hasher = hashlib.new(algorithm)
-        else:
-            message = f"Unsupported checksum algorithm: {algorithm}"
-            raise ValueError(message)
-
-        with file_path.open("rb") as fh:
-            while True:
-                chunk = fh.read(DEFAULT_CHUNK_SIZE)
-                if not chunk:
-                    break
-                hasher.update(chunk)
-
-        return hasher.hexdigest()
+        return compute_checksum_from_file(file_path, algorithm=algorithm)
 
     def _ensure_within_root(self, path: PathLike) -> Path:
         candidate = (self._root / Path(path)).resolve(strict=False)
@@ -270,17 +232,7 @@ class LocalFileBackend(FileBackend):
             raise InvalidOperationError.path_outside_root(candidate) from exc
         return candidate
 
-    @staticmethod
-    def _coerce_bytes(data: bytes | str | BinaryIO) -> bytes:
-        if isinstance(data, bytes):
-            return data
-        if isinstance(data, str):
-            return data.encode("utf-8")
-        if isinstance(data, (io.BufferedIOBase, io.RawIOBase)):
-            return data.read()
-        data_type = type(data).__name__
-        message = f"Unsupported data type: {data_type}"
-        raise TypeError(message)
+    _coerce_bytes = staticmethod(coerce_to_bytes)
 
 
 def _timestamp_to_datetime(timestamp: float) -> datetime:

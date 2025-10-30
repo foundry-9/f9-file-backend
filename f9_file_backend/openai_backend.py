@@ -21,6 +21,7 @@ from .interfaces import (
     NotFoundError,
     PathLike,
 )
+from .utils import accumulate_chunks, coerce_to_bytes, compute_checksum_from_bytes
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -331,24 +332,7 @@ class OpenAIVectorStoreFileBackend(FileBackend):
 
         self._ensure_parent_directories(path_str)
 
-        accumulated = io.BytesIO()
-        if hasattr(chunk_source, "read"):
-            while True:
-                chunk = chunk_source.read(chunk_size)
-                if not chunk:
-                    break
-                if isinstance(chunk, str):
-                    accumulated.write(chunk.encode("utf-8"))
-                else:
-                    accumulated.write(chunk)
-        else:
-            for chunk in chunk_source:
-                if isinstance(chunk, str):
-                    accumulated.write(chunk.encode("utf-8"))
-                else:
-                    accumulated.write(chunk)
-
-        payload = accumulated.getvalue()
+        payload = accumulate_chunks(chunk_source, chunk_size)
         entry = self._persist_entry(path_str, payload, is_dir=False)
         return self._entry_to_info(entry)
 
@@ -401,23 +385,7 @@ class OpenAIVectorStoreFileBackend(FileBackend):
         algorithm: ChecksumAlgorithm,
     ) -> str:
         """Compute the checksum of binary data using the specified algorithm."""
-        if algorithm == "blake3":
-            try:
-                import blake3
-            except ImportError as exc:
-                message = (
-                    "blake3 is not installed. Install it with: pip install blake3"
-                )
-                raise ImportError(message) from exc
-            hasher = blake3.blake3()
-        elif algorithm in ("md5", "sha256", "sha512"):
-            hasher = hashlib.new(algorithm)
-        else:
-            message = f"Unsupported checksum algorithm: {algorithm}"
-            raise ValueError(message)
-
-        hasher.update(payload)
-        return hasher.hexdigest()
+        return compute_checksum_from_bytes(payload, algorithm=algorithm)
 
     def _create_directory(self, path: str) -> FileInfo:
         """Create or return an existing directory placeholder."""
@@ -800,21 +768,7 @@ class OpenAIVectorStoreFileBackend(FileBackend):
             modified_at=entry.modified_at,
         )
 
-    @staticmethod
-    def _coerce_bytes(data: bytes | str | BinaryIO) -> bytes:
-        """Coerce supported input types to raw bytes."""
-        if isinstance(data, bytes):
-            return data
-        if isinstance(data, str):
-            return data.encode("utf-8")
-        if isinstance(data, io.BufferedIOBase):
-            return data.read()
-        if isinstance(data, io.RawIOBase):
-            return data.read()
-        if hasattr(data, "read"):
-            return data.read()
-        message = f"Unsupported data type: {type(data).__name__}"
-        raise TypeError(message)
+    _coerce_bytes = staticmethod(coerce_to_bytes)
 
     @staticmethod
     def _normalise_path(path: PathLike) -> str:
