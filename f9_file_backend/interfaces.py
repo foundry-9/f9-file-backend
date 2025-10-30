@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO, Protocol, Union
+from typing import TYPE_CHECKING, BinaryIO, Literal, Protocol, Union
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 PathLike = Union[str, Path]
 
 DEFAULT_CHUNK_SIZE = 8192
+
+ChecksumAlgorithm = Literal["md5", "sha256", "sha512", "blake3"]
 
 
 class FileBackendError(RuntimeError):
@@ -253,6 +255,49 @@ class FileBackend(ABC):
 
         Returns:
             FileInfo describing the newly written resource.
+
+        """
+
+    @abstractmethod
+    def checksum(
+        self,
+        path: PathLike,
+        *,
+        algorithm: ChecksumAlgorithm = "sha256",
+    ) -> str:
+        """Compute a file checksum using the specified algorithm.
+
+        Args:
+            path: Target file path relative to the backend root.
+            algorithm: Hashing algorithm to use. Supported values: md5, sha256,
+                sha512, blake3.
+
+        Returns:
+            Hexadecimal string representation of the file's hash.
+
+        Raises:
+            NotFoundError: If the file does not exist.
+            InvalidOperationError: If the path is a directory.
+
+        """
+
+    @abstractmethod
+    def checksum_many(
+        self,
+        paths: list[PathLike],
+        *,
+        algorithm: ChecksumAlgorithm = "sha256",
+    ) -> dict[str, str]:
+        """Compute checksums for multiple files in batch.
+
+        Args:
+            paths: List of file paths relative to the backend root.
+            algorithm: Hashing algorithm to use. Supported values: md5, sha256,
+                sha512, blake3.
+
+        Returns:
+            Dictionary mapping path strings to hexadecimal hash values.
+            Missing files are silently skipped and not included in the result.
 
         """
 

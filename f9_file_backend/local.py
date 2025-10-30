@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import shutil
 from datetime import datetime, timezone
@@ -11,6 +12,7 @@ from typing import TYPE_CHECKING, BinaryIO
 from .interfaces import (
     DEFAULT_CHUNK_SIZE,
     AlreadyExistsError,
+    ChecksumAlgorithm,
     FileBackend,
     FileInfo,
     InvalidOperationError,
@@ -196,6 +198,69 @@ class LocalFileBackend(FileBackend):
                         fh.write(chunk)
 
         return self.info(target)
+
+    def checksum(
+        self,
+        path: PathLike,
+        *,
+        algorithm: ChecksumAlgorithm = "sha256",
+    ) -> str:
+        """Compute a file checksum using the specified algorithm."""
+        target = self._ensure_within_root(path)
+        if not target.exists():
+            raise NotFoundError(target)
+        if target.is_dir():
+            raise InvalidOperationError.cannot_read_directory(target)
+
+        return self._compute_checksum(target, algorithm)
+
+    def checksum_many(
+        self,
+        paths: list[PathLike],
+        *,
+        algorithm: ChecksumAlgorithm = "sha256",
+    ) -> dict[str, str]:
+        """Compute checksums for multiple files in batch."""
+        result = {}
+        for path in paths:
+            try:
+                target = self._ensure_within_root(path)
+                if target.exists() and not target.is_dir():
+                    result[str(path)] = self._compute_checksum(target, algorithm)
+            except (NotFoundError, InvalidOperationError):
+                # Skip missing files and directories
+                pass
+        return result
+
+    def _compute_checksum(
+        self,
+        file_path: Path,
+        algorithm: ChecksumAlgorithm,
+    ) -> str:
+        """Compute the checksum of a file using the specified algorithm."""
+        if algorithm == "blake3":
+            try:
+                import blake3
+            except ImportError as exc:
+                message = (
+                    "blake3 is not installed. Install it with: pip install blake3"
+                )
+                raise ImportError(message) from exc
+            hasher = blake3.blake3()
+        elif algorithm in ("md5", "sha256", "sha512"):
+            hasher = hashlib.new(algorithm)
+        else:
+            message = f"Unsupported checksum algorithm: {algorithm}"
+            raise ValueError(message)
+
+        with file_path.open("rb") as fh:
+            while True:
+                chunk = fh.read(DEFAULT_CHUNK_SIZE)
+                if not chunk:
+                    break
+                hasher.update(chunk)
+
+        return hasher.hexdigest()
 
     def _ensure_within_root(self, path: PathLike) -> Path:
         candidate = (self._root / Path(path)).resolve(strict=False)

@@ -121,3 +121,64 @@ For an end-to-end validation against live OpenAI services, run
 credentials (or read them from `OPENAI_API_KEY` / `OPENAI_STORAGE_VAULT_ID`),
 mirror the public `aethermoor` repository into your vector store, and exercise
 the full `SyncFileBackend` workflow using a temporary Git remote.
+
+## Streaming Operations
+
+Work with large files efficiently without loading them entirely into memory:
+
+```python
+from f9_file_backend import LocalFileBackend
+
+backend = LocalFileBackend(root="data")
+
+# Stream read with custom chunk size
+for chunk in backend.stream_read("large_file.bin", chunk_size=1024 * 64):
+    process(chunk)
+
+# Stream write from an iterator or file-like object
+def content_generator():
+    for i in range(1000):
+        yield f"Line {i}\n"
+
+backend.stream_write("generated.txt", chunk_source=content_generator())
+```
+
+Streaming is supported across all backends (local, Git, and OpenAI vector store).
+
+## Checksum & Integrity Verification
+
+Verify file integrity using checksums with multiple algorithms:
+
+```python
+from f9_file_backend import LocalFileBackend
+
+backend = LocalFileBackend(root="data")
+
+# Compute a file checksum (default: SHA256)
+sha256_hash = backend.checksum("documents/data.json")
+
+# Use alternative algorithms
+md5_hash = backend.checksum("documents/data.json", algorithm="md5")
+sha512_hash = backend.checksum("documents/data.json", algorithm="sha512")
+
+# For BLAKE3 (requires: pip install f9-file-backend[checksum])
+blake3_hash = backend.checksum("documents/data.json", algorithm="blake3")
+
+# Batch compute checksums for multiple files
+hashes = backend.checksum_many(
+    ["file1.txt", "file2.txt", "file3.txt"],
+    algorithm="sha256",
+)
+# Missing files are silently skipped
+# Returns: {"file1.txt": "abc123...", "file2.txt": "def456...", ...}
+```
+
+Supported algorithms: `md5`, `sha256` (default), `sha512`, `blake3`
+
+**Note:** BLAKE3 requires an additional dependency. Install it with:
+
+```bash
+pip install f9-file-backend[checksum]
+```
+
+All backends support checksum operations with consistent results across local filesystem, Git repositories, and OpenAI vector stores.

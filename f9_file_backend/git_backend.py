@@ -12,6 +12,7 @@ from urllib.parse import quote, urlparse, urlunparse
 from .interfaces import (
     DEFAULT_CHUNK_SIZE,
     AlreadyExistsError,
+    ChecksumAlgorithm,
     FileBackendError,
     FileInfo,
     InvalidOperationError,
@@ -141,6 +142,24 @@ class GitSyncFileBackend(SyncFileBackend):
             chunk_size=chunk_size,
             overwrite=overwrite,
         )
+
+    def checksum(
+        self,
+        path: PathLike,
+        *,
+        algorithm: ChecksumAlgorithm = "sha256",
+    ) -> str:
+        """Compute a file checksum using the specified algorithm."""
+        return self._local_backend.checksum(path, algorithm=algorithm)
+
+    def checksum_many(
+        self,
+        paths: list[PathLike],
+        *,
+        algorithm: ChecksumAlgorithm = "sha256",
+    ) -> dict[str, str]:
+        """Compute checksums for multiple files in batch."""
+        return self._local_backend.checksum_many(paths, algorithm=algorithm)
 
     def push(self, *, message: str | None = None) -> None:
         """Commit local changes (if any) and push to the remote repository."""

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO
 from .interfaces import (
     DEFAULT_CHUNK_SIZE,
     AlreadyExistsError,
+    ChecksumAlgorithm,
     FileBackend,
     FileBackendError,
     FileInfo,
@@ -350,6 +351,73 @@ class OpenAIVectorStoreFileBackend(FileBackend):
         payload = accumulated.getvalue()
         entry = self._persist_entry(path_str, payload, is_dir=False)
         return self._entry_to_info(entry)
+
+    def checksum(
+        self,
+        path: PathLike,
+        *,
+        algorithm: ChecksumAlgorithm = "sha256",
+    ) -> str:
+        """Compute a file checksum using the specified algorithm."""
+        self._ensure_index()
+        path_str = self._normalise_path(path)
+
+        entry = self._index.get(path_str)
+        if not entry:
+            raise NotFoundError(path_str)
+        if entry.is_dir:
+            raise InvalidOperationError.cannot_read_directory(path_str)
+
+        # Download the file content and compute checksum
+        payload = self._download_file_content(entry.file_id)
+        return self._compute_checksum(payload, algorithm)
+
+    def checksum_many(
+        self,
+        paths: list[PathLike],
+        *,
+        algorithm: ChecksumAlgorithm = "sha256",
+    ) -> dict[str, str]:
+        """Compute checksums for multiple files in batch."""
+        self._ensure_index()
+        result = {}
+
+        for path in paths:
+            try:
+                path_str = self._normalise_path(path)
+                entry = self._index.get(path_str)
+                if entry and not entry.is_dir:
+                    payload = self._download_file_content(entry.file_id)
+                    result[str(path)] = self._compute_checksum(payload, algorithm)
+            except (NotFoundError, InvalidOperationError):
+                # Skip missing files and directories
+                pass
+
+        return result
+
+    def _compute_checksum(
+        self,
+        payload: bytes,
+        algorithm: ChecksumAlgorithm,
+    ) -> str:
+        """Compute the checksum of binary data using the specified algorithm."""
+        if algorithm == "blake3":
+            try:
+                import blake3
+            except ImportError as exc:
+                message = (
+                    "blake3 is not installed. Install it with: pip install blake3"
+                )
+                raise ImportError(message) from exc
+            hasher = blake3.blake3()
+        elif algorithm in ("md5", "sha256", "sha512"):
+            hasher = hashlib.new(algorithm)
+        else:
+            message = f"Unsupported checksum algorithm: {algorithm}"
+            raise ValueError(message)
+
+        hasher.update(payload)
+        return hasher.hexdigest()
 
     def _create_directory(self, path: str) -> FileInfo:
         """Create or return an existing directory placeholder."""
