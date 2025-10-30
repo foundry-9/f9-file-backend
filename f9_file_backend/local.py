@@ -275,6 +275,33 @@ class LocalFileBackend(FileBackend):
                 pass
         return result
 
+    def glob(
+        self,
+        pattern: str,
+        *,
+        include_dirs: bool = False,
+    ) -> list[Path]:
+        """Find paths matching a glob pattern."""
+        # Use pathlib's glob to find all matches within root
+        matches = list(self._root.glob(pattern))
+
+        results = []
+        for match in matches:
+            # Verify path is within root (already should be, but double-check)
+            try:
+                match.relative_to(self._root)
+            except ValueError:
+                continue
+
+            # Filter based on type
+            if not include_dirs and match.is_dir():
+                continue
+
+            # Return relative path from root
+            results.append(match.relative_to(self._root))
+
+        return sorted(results)
+
     def _compute_checksum(
         self,
         file_path: Path,

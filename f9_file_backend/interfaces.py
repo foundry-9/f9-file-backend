@@ -301,6 +301,73 @@ class FileBackend(ABC):
 
         """
 
+    @abstractmethod
+    def glob(
+        self,
+        pattern: str,
+        *,
+        include_dirs: bool = False,
+    ) -> list[Path]:
+        """Find paths matching a glob pattern.
+
+        Supports standard glob syntax including *, ?, and []. For recursive
+        globbing, use ** in the pattern (e.g., '**/file.txt').
+
+        Args:
+            pattern: Glob pattern to match. Patterns are relative to the backend root.
+            include_dirs: When False, only return files. When True, include directories.
+
+        Returns:
+            List of paths matching the pattern, relative to the backend root.
+            Returns empty list if no matches found.
+
+        """
+
+    def glob_files(
+        self,
+        pattern: str,
+    ) -> list[Path]:
+        """Find files matching a glob pattern.
+
+        Convenience method that calls glob() with include_dirs=False.
+
+        Args:
+            pattern: Glob pattern to match.
+
+        Returns:
+            List of file paths matching the pattern.
+
+        """
+        return self.glob(pattern, include_dirs=False)
+
+    def glob_dirs(
+        self,
+        pattern: str,
+    ) -> list[Path]:
+        """Find directories matching a glob pattern.
+
+        Convenience method that returns only directories by filtering glob results.
+
+        Args:
+            pattern: Glob pattern to match.
+
+        Returns:
+            List of directory paths matching the pattern.
+
+        """
+        all_matches = self.glob(pattern, include_dirs=True)
+        # Filter to only directories by checking with info()
+        dirs = []
+        for path in all_matches:
+            try:
+                info_result = self.info(path)
+                if info_result.is_dir:
+                    dirs.append(path)
+            except FileBackendError:
+                # Skip paths that can't be accessed
+                pass
+        return dirs
+
 
 class SupportsBackend(Protocol):
     """Convenience protocol for objects exposing a file backend."""

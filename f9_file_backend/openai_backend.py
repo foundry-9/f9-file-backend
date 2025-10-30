@@ -446,6 +446,32 @@ class OpenAIVectorStoreFileBackend(FileBackend):
 
         return result
 
+    def glob(
+        self,
+        pattern: str,
+        *,
+        include_dirs: bool = False,
+    ) -> list[Path]:
+        """Find paths matching a glob pattern."""
+        from fnmatch import fnmatch
+
+        self._ensure_index()
+        results = []
+
+        for path_str, entry in self._index.items():
+            # Convert path string to Path for matching
+            path_obj = Path(path_str)
+
+            # Filter based on type
+            if not include_dirs and entry.is_dir:
+                continue
+
+            # Use fnmatch for glob pattern matching
+            if fnmatch(path_str, pattern):
+                results.append(path_obj)
+
+        return sorted(results)
+
     def _compute_checksum(
         self,
         payload: bytes,

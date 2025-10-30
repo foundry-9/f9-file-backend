@@ -65,12 +65,14 @@ from typing import TYPE_CHECKING, BinaryIO
 
 from .interfaces import (
     ChecksumAlgorithm,
+    FileBackendError,
     FileInfo,
     PathLike,
 )
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+    from pathlib import Path
 
 
 class AsyncFileBackend(ABC):
@@ -246,6 +248,73 @@ class AsyncFileBackend(ABC):
             Missing files are silently skipped and not included in the result.
 
         """
+
+    @abstractmethod
+    async def glob(
+        self,
+        pattern: str,
+        *,
+        include_dirs: bool = False,
+    ) -> list[Path]:
+        """Find paths matching a glob pattern asynchronously.
+
+        Supports standard glob syntax including *, ?, and []. For recursive
+        globbing, use ** in the pattern (e.g., '**/file.txt').
+
+        Args:
+            pattern: Glob pattern to match. Patterns are relative to the backend root.
+            include_dirs: When False, only return files. When True, include directories.
+
+        Returns:
+            List of paths matching the pattern, relative to the backend root.
+            Returns empty list if no matches found.
+
+        """
+
+    async def glob_files(
+        self,
+        pattern: str,
+    ) -> list[Path]:
+        """Find files matching a glob pattern asynchronously.
+
+        Convenience method that calls glob() with include_dirs=False.
+
+        Args:
+            pattern: Glob pattern to match.
+
+        Returns:
+            List of file paths matching the pattern.
+
+        """
+        return await self.glob(pattern, include_dirs=False)
+
+    async def glob_dirs(
+        self,
+        pattern: str,
+    ) -> list[Path]:
+        """Find directories matching a glob pattern asynchronously.
+
+        Convenience method that returns only directories by filtering glob results.
+
+        Args:
+            pattern: Glob pattern to match.
+
+        Returns:
+            List of directory paths matching the pattern.
+
+        """
+        all_matches = await self.glob(pattern, include_dirs=True)
+        # Filter to only directories by checking with info()
+        dirs = []
+        for path in all_matches:
+            try:
+                info_result = await self.info(path)
+                if info_result.is_dir:
+                    dirs.append(path)
+            except FileBackendError:
+                # Skip paths that can't be accessed
+                pass
+        return dirs
 
 
 class AsyncSyncFileBackend(AsyncFileBackend):

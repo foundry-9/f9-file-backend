@@ -55,6 +55,7 @@ from .openai_backend import OpenAIVectorStoreFileBackend
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+    from pathlib import Path
 
 
 class AsyncOpenAIVectorStoreFileBackend(AsyncFileBackend):
@@ -218,4 +219,17 @@ class AsyncOpenAIVectorStoreFileBackend(AsyncFileBackend):
             self._sync_backend.checksum_many,
             paths,
             algorithm=algorithm,
+        )
+
+    async def glob(
+        self,
+        pattern: str,
+        *,
+        include_dirs: bool = False,
+    ) -> list[Path]:
+        """Find paths matching a glob pattern asynchronously."""
+        return await asyncio.to_thread(
+            self._sync_backend.glob,
+            pattern,
+            include_dirs=include_dirs,
         )

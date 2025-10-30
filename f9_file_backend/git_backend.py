@@ -229,6 +229,15 @@ class GitSyncFileBackend(SyncFileBackend):
         """Compute checksums for multiple files in batch."""
         return self._local_backend.checksum_many(paths, algorithm=algorithm)
 
+    def glob(
+        self,
+        pattern: str,
+        *,
+        include_dirs: bool = False,
+    ) -> list[Path]:
+        """Find paths matching a glob pattern."""
+        return self._local_backend.glob(pattern, include_dirs=include_dirs)
+
     def push(self, *, message: str | None = None) -> None:
         """Commit local changes (if any) and push to the remote repository."""
         self._ensure_no_conflicts()

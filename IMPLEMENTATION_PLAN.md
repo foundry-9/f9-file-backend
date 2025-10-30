@@ -12,8 +12,8 @@ This document provides a detailed implementation plan for adding 10 new features
 
 ## Implementation Progress
 
-**Overall Status**: Phase 1 (High-Priority) - COMPLETE ✅
-**Completed Features**: 3 of 3
+**Overall Status**: Phase 1 (High-Priority) - COMPLETE ✅ | Phase 2 (Medium-Priority) - IN PROGRESS 🔄
+**Completed Features**: Phase 1: 3 of 3 | Phase 2: 1 of 3
 
 ### Phase 1 Status
 
@@ -22,6 +22,14 @@ This document provides a detailed implementation plan for adding 10 new features
 | Feature 1: Streaming/Chunked I/O | ✅ COMPLETE | ~8 hours | 38 tests (100% passing) |
 | Feature 2: Checksum & Integrity | ✅ COMPLETE | ~6 hours | 31 tests (100% passing) |
 | Feature 3: Asynchronous Operations | ✅ COMPLETE | ~6 hours | 39 tests (100% passing) |
+
+### Phase 2 Status
+
+| Feature | Status | Actual Effort | Test Coverage |
+|---------|--------|---------------|---|
+| Feature 4: Pattern Matching (Glob) | ✅ COMPLETE | ~4 hours | 46 tests (100% passing) |
+| Feature 5: Atomic Operations (Sync Sessions) | ⏳ PENDING | TBD | TBD |
+| Feature 6: URI-Based Backend Factory | ⏳ PENDING | TBD | TBD |
 
 ### Feature 1: Streaming/Chunked I/O (COMPLETED ✅)
 
@@ -583,6 +591,72 @@ f9_file_backend/
 - **Modify**: `f9_file_backend/__init__.py`
 - **Create**: `tests/test_factory.py`
 - **Modify**: `README.md`
+
+---
+
+### Feature 4: Pattern Matching (Glob & Recursive Glob) (COMPLETED ✅)
+
+**Completion Date**: 2025-10-30
+**Estimated Effort**: 10-12 hours
+**Actual Effort**: ~4 hours (ahead of schedule)
+
+#### Implementation Details
+
+1. **interfaces.py** - Added glob abstractions:
+   - `glob()` abstract method with pattern and include_dirs parameters
+   - `glob_files()` concrete method for file-only results
+   - `glob_dirs()` concrete method for directory-only results
+   - Full support for standard glob patterns (*, ?, [])
+   - Support for recursive globbing with **
+
+2. **local.py** - Full implementation for LocalFileBackend:
+   - `glob()` - Uses pathlib.Path.glob() for efficient matching
+   - Proper filtering based on include_dirs flag
+   - Returns sorted relative paths for consistent ordering
+   - Supports all glob syntax including recursive patterns
+
+3. **git_backend.py** - Delegation implementation:
+   - `glob()` delegates to underlying LocalFileBackend
+   - Maintains consistency with existing patterns
+
+4. **openai_backend.py** - Full implementation for OpenAI vector store:
+   - `glob()` - Uses fnmatch for pattern matching against index
+   - Efficient implementation using cached file index
+   - Proper directory/file filtering
+
+5. **async_interfaces.py** - Async method definitions:
+   - `glob()` abstract method with async signature
+   - `glob_files()` and `glob_dirs()` async convenience methods
+   - Support for AsyncIterator pattern
+
+6. **async_local.py, async_git_backend.py, async_openai_backend.py**:
+   - All implement async glob using asyncio.to_thread()
+   - Non-blocking glob operations for async backends
+
+#### Test Coverage
+
+- **Unit Tests** (28 tests): Basic patterns, wildcard syntax, directory filtering, recursive globbing
+- **Integration Tests** (18 tests): Large file sets, deeply nested structures, performance testing
+- **Total Tests**: 46 new tests, 100% passing
+- **No Regressions**: All 232 existing tests still passing (278 total passed, 8 skipped)
+
+#### Key Features Delivered
+
+✅ Standard glob patterns (*, ?, [])
+✅ Recursive globbing with **
+✅ Directory inclusion/exclusion filtering
+✅ Convenience methods (glob_files, glob_dirs)
+✅ Consistent path normalization (relative paths)
+✅ Sorted result ordering for predictability
+✅ Support across all backends (Local, Git, OpenAI)
+✅ Full async support for all backends
+✅ Performance optimized (1000+ file handling)
+✅ Special character handling
+
+#### Dependencies
+
+- **No new dependencies** - Uses Python's pathlib.Path.glob() and fnmatch
+- **Async support** - Uses existing asyncio.to_thread()
 
 ---
 

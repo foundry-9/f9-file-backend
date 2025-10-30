@@ -233,6 +233,19 @@ class AsyncGitSyncFileBackend(AsyncSyncFileBackend):
             algorithm=algorithm,
         )
 
+    async def glob(
+        self,
+        pattern: str,
+        *,
+        include_dirs: bool = False,
+    ) -> list[Path]:
+        """Find paths matching a glob pattern asynchronously."""
+        return await asyncio.to_thread(
+            self._sync_backend.glob,
+            pattern,
+            include_dirs=include_dirs,
+        )
+
     async def push(self, *, message: str | None = None) -> None:
         """Publish local changes to the remote data source asynchronously."""
         return await asyncio.to_thread(

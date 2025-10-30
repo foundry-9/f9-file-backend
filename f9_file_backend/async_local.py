@@ -233,3 +233,16 @@ class AsyncLocalFileBackend(AsyncFileBackend):
             paths,
             algorithm=algorithm,
         )
+
+    async def glob(
+        self,
+        pattern: str,
+        *,
+        include_dirs: bool = False,
+    ) -> list[Path]:
+        """Find paths matching a glob pattern asynchronously."""
+        return await asyncio.to_thread(
+            self._sync_backend.glob,
+            pattern,
+            include_dirs=include_dirs,
+        )
