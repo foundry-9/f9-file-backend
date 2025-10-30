@@ -13,14 +13,14 @@ This document provides a detailed implementation plan for adding 10 new features
 ## Implementation Progress
 
 **Overall Status**: Phase 1 (High-Priority) - IN PROGRESS
-**Completed Features**: 1 of 3
+**Completed Features**: 2 of 3
 
 ### Phase 1 Status
 
 | Feature | Status | Actual Effort | Test Coverage |
 |---------|--------|---------------|---|
 | Feature 1: Streaming/Chunked I/O | ✅ COMPLETE | ~8 hours | 38 tests (100% passing) |
-| Feature 2: Checksum & Integrity | ⏳ Pending | - | - |
+| Feature 2: Checksum & Integrity | ✅ COMPLETE | ~6 hours | 31 tests (100% passing) |
 | Feature 3: Asynchronous Operations | ⏳ Pending | - | - |
 
 ### Feature 1: Streaming/Chunked I/O (COMPLETED ✅)
@@ -71,6 +71,67 @@ This document provides a detailed implementation plan for adding 10 new features
 ✅ Proper parent directory creation
 ✅ Comprehensive error handling
 ✅ Unicode/UTF-8 support across all backends
+
+---
+
+### Feature 2: Checksum & Integrity Verification (COMPLETED ✅)
+
+**Completion Date**: 2025-10-30
+**Estimated Effort**: 12-15 hours
+**Actual Effort**: ~6 hours (ahead of schedule)
+
+#### Implementation Details
+
+1. **interfaces.py** - Added checksum abstractions:
+   - `ChecksumAlgorithm` type alias: `Literal["md5", "sha256", "sha512", "blake3"]`
+   - `checksum()` abstract method for single file checksums
+   - `checksum_many()` abstract method for batch operations
+
+2. **local.py** - Full implementation for LocalFileBackend:
+   - `checksum()` - Computes file hash using specified algorithm
+   - `checksum_many()` - Batch compute with graceful skipping of missing files
+   - Support for MD5, SHA256, SHA512 via built-in `hashlib`
+   - Optional BLAKE3 support via `blake3` library
+   - Streaming approach for memory-efficient processing
+
+3. **git_backend.py** - Delegation implementation:
+   - `checksum()` and `checksum_many()` delegate to underlying LocalFileBackend
+   - Simple wrapper maintaining Git backend patterns
+
+4. **openai_backend.py** - Full implementation for OpenAI vector store:
+   - `checksum()` - Downloads file content and computes hash
+   - `checksum_many()` - Batch operations with graceful error handling
+   - Support for all four algorithms
+   - Efficient implementation with skip logic for non-existent files
+
+5. **init.py** - Public API exports:
+   - Exported `ChecksumAlgorithm` type for user code
+
+#### Test Coverage
+
+- **Unit Tests** (24 tests): All algorithms, stability, edge cases, large files, unicode
+- **Integration Tests** (7 tests): Round-trip consistency, delegation, performance
+- **Total Tests**: 31 new tests, 100% passing
+- **No Regressions**: All 64 existing tests still passing (95 total passed, 2 skipped)
+
+#### Features Delivered
+
+✅ Four hash algorithms: MD5, SHA256, SHA512, BLAKE3
+✅ Memory-efficient streaming approach (8KB chunks)
+✅ Single file and batch operations
+✅ Graceful handling of missing files/directories
+✅ Consistent implementation across all backends
+✅ Optional BLAKE3 support (pip install f9-file-backend[checksum])
+✅ Support for binary and text files
+✅ Large file support (tested with 10MB+ files)
+✅ Unicode/UTF-8 content support
+✅ Comprehensive error handling
+
+#### Dependencies
+
+- **New optional dependency**: `blake3>=0.3` for BLAKE3 algorithm
+- **Built-in algorithms**: MD5, SHA256, SHA512 via Python's `hashlib`
+- Updated `pyproject.toml` with `checksum` and `all` optional dependency groups
 
 ---
 
