@@ -118,6 +118,9 @@ class GitSyncFileBackend(SyncFileBackend):
         self._branch = self._config.get("branch", "main")
         self._author_name = self._config.get("author_name", "f9-sync")
         self._author_email = self._config.get("author_email", "f9-sync@example.com")
+        self._auto_pull = self._config.get("auto_pull", False)
+        self._auto_push = self._config.get("auto_push", False)
+        self._in_session = False
         self._workdir = Path(self._config["path"]).expanduser()
         self._env = self._build_env()
         self._git_path = self._discover_git()
@@ -147,12 +150,15 @@ class GitSyncFileBackend(SyncFileBackend):
         overwrite: bool = False,
     ) -> FileInfo:
         """Create a file or directory in the working tree."""
-        return self._local_backend.create(
+        result = self._local_backend.create(
             path,
             data=data,
             is_directory=is_directory,
             overwrite=overwrite,
         )
+        if self._auto_push and not self._in_session:
+            self.push(message=f"Create {path}")
+        return result
 
     def read(
         self,
@@ -161,6 +167,8 @@ class GitSyncFileBackend(SyncFileBackend):
         binary: bool = True,
     ) -> bytes | str:
         """Read a file from the working tree."""
+        if self._auto_pull and not self._in_session:
+            self.pull()
         return self._local_backend.read(path, binary=binary)
 
     def update(
@@ -171,14 +179,21 @@ class GitSyncFileBackend(SyncFileBackend):
         append: bool = False,
     ) -> FileInfo:
         """Update the contents of an existing file."""
-        return self._local_backend.update(path, data=data, append=append)
+        result = self._local_backend.update(path, data=data, append=append)
+        if self._auto_push and not self._in_session:
+            self.push(message=f"Update {path}")
+        return result
 
     def delete(self, path: PathLike, *, recursive: bool = False) -> None:
         """Delete a file or directory from the working tree."""
         self._local_backend.delete(path, recursive=recursive)
+        if self._auto_push and not self._in_session:
+            self.push(message=f"Delete {path}")
 
     def info(self, path: PathLike) -> FileInfo:
         """Return file metadata from the working tree."""
+        if self._auto_pull and not self._in_session:
+            self.pull()
         return self._local_backend.info(path)
 
     def stream_read(
@@ -189,6 +204,8 @@ class GitSyncFileBackend(SyncFileBackend):
         binary: bool = True,
     ) -> Iterator[bytes | str]:
         """Stream file contents in chunks from the working tree."""
+        if self._auto_pull and not self._in_session:
+            self.pull()
         return self._local_backend.stream_read(
             path,
             chunk_size=chunk_size,
@@ -204,12 +221,15 @@ class GitSyncFileBackend(SyncFileBackend):
         overwrite: bool = False,
     ) -> FileInfo:
         """Write file from stream to the working tree."""
-        return self._local_backend.stream_write(
+        result = self._local_backend.stream_write(
             path,
             chunk_source=chunk_source,
             chunk_size=chunk_size,
             overwrite=overwrite,
         )
+        if self._auto_push and not self._in_session:
+            self.push(message=f"Stream write {path}")
+        return result
 
     def checksum(
         self,
@@ -344,6 +364,10 @@ class GitSyncFileBackend(SyncFileBackend):
         (pull/push) happen atomically. Uses the underlying LocalFileBackend's
         file-based locking mechanism.
 
+        When auto_pull or auto_push is enabled, the session will batch those
+        operations at the beginning and end of the session respectively,
+        rather than doing them for each individual operation.
+
         Args:
             timeout: Optional timeout in seconds for acquiring the lock.
 
@@ -354,7 +378,27 @@ class GitSyncFileBackend(SyncFileBackend):
             TimeoutError: If the lock cannot be acquired within the timeout.
 
         """
-        return self._local_backend.sync_session(timeout=timeout)
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _auto_sync_session() -> Any:  # noqa: ANN201
+            # Acquire the lock
+            with self._local_backend.sync_session(timeout=timeout):
+                # Mark that we're in a session to prevent individual auto-syncs
+                self._in_session = True
+                try:
+                    # Pull at the start of the session if auto_pull is enabled
+                    if self._auto_pull:
+                        self.pull()
+                    yield
+                finally:
+                    # Push at the end of the session if auto_push is enabled
+                    if self._auto_push:
+                        self.push(message="Batch sync changes")
+                    # Always reset the session flag
+                    self._in_session = False
+
+        return _auto_sync_session()
 
     def _clone_repository(self) -> None:
         parent = self._workdir.parent
