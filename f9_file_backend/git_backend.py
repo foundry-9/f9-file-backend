@@ -32,7 +32,6 @@ Performance Characteristics:
     - Disk I/O for commits and history
 
 Example:
-
     >>> from f9_file_backend import GitSyncFileBackend
     >>> backend = GitSyncFileBackend(
     ...     root="/data/repo",
@@ -362,28 +361,32 @@ class GitSyncFileBackend(SyncFileBackend):
         parent.mkdir(parents=True, exist_ok=True)
         if self._workdir.exists():
             self._workdir.rmdir()
-        clone = subprocess.run(  # noqa: S603 - commands are to the trusted git executable
-            [
-                self._git_path,
-                "clone",
-                "--branch",
-                self._branch,
-                "--single-branch",
-                self._remote_url,
-                str(self._workdir),
-            ],
-            check=False,
-            env=self._env,
-            capture_output=True,
-            text=True,
-        )
-        if clone.returncode != 0:
-            fallback = subprocess.run(  # noqa: S603 - fallback to trusted git executable
-                [self._git_path, "clone", self._remote_url, str(self._workdir)],
+        clone = (
+            subprocess.run(  # noqa: S603 - commands are to the trusted git executable
+                [
+                    self._git_path,
+                    "clone",
+                    "--branch",
+                    self._branch,
+                    "--single-branch",
+                    self._remote_url,
+                    str(self._workdir),
+                ],
                 check=False,
                 env=self._env,
                 capture_output=True,
                 text=True,
+            )
+        )
+        if clone.returncode != 0:
+            fallback = (
+                subprocess.run(  # noqa: S603 - fallback to trusted git executable
+                    [self._git_path, "clone", self._remote_url, str(self._workdir)],
+                    check=False,
+                    env=self._env,
+                    capture_output=True,
+                    text=True,
+                )
             )
             if fallback.returncode != 0:
                 stderr = (fallback.stderr or clone.stderr or "").strip()
@@ -397,11 +400,9 @@ class GitSyncFileBackend(SyncFileBackend):
             self._run_git(["remote", "add", "origin", self._remote_url])
 
     def _checkout_branch(self) -> None:
-        current = (
-            self._run_git(
-                ["rev-parse", "--abbrev-ref", "HEAD"],
-            ).stdout.strip()
-        )
+        current = self._run_git(
+            ["rev-parse", "--abbrev-ref", "HEAD"],
+        ).stdout.strip()
         if current == self._branch:
             return
 
@@ -484,11 +485,7 @@ class GitSyncFileBackend(SyncFileBackend):
         remote_url = str(connection_info["remote_url"])
         username = connection_info.get("username")
         password = connection_info.get("password")
-        if (
-            username
-            and password
-            and remote_url.startswith(("http://", "https://"))
-        ):
+        if username and password and remote_url.startswith(("http://", "https://")):
             parsed = urlparse(remote_url)
             if parsed.username:
                 return remote_url

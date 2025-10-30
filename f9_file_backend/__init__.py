@@ -78,6 +78,17 @@ from .interfaces import (
 )
 from .local import LocalFileBackend
 from .openai_backend import OpenAIBackendError, OpenAIVectorStoreFileBackend
+from .registry import (
+    VaultContext,
+    VaultRegistry,
+    get_vault,
+    get_vault_options,
+    list_vaults,
+    register_vault,
+    unregister_vault,
+    vault_context,
+    vault_exists,
+)
 
 __all__ = [
     "DEFAULT_CHUNK_SIZE",
@@ -103,6 +114,15 @@ __all__ = [
     "SupportsBackend",
     "SyncConflict",
     "SyncFileBackend",
+    "VaultContext",
+    "VaultRegistry",
+    "get_vault",
+    "get_vault_options",
+    "list_vaults",
     "register_backend_factory",
+    "register_vault",
     "resolve_backend",
+    "unregister_vault",
+    "vault_context",
+    "vault_exists",
 ]
