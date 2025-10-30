@@ -56,6 +56,12 @@ from .async_git_backend import AsyncGitSyncFileBackend
 from .async_interfaces import AsyncFileBackend, AsyncSyncFileBackend
 from .async_local import AsyncLocalFileBackend
 from .async_openai_backend import AsyncOpenAIVectorStoreFileBackend
+from .compat import (
+    CompatibleFileBackend,
+    translate_backend_exception,
+    translate_exceptions,
+    translate_method,
+)
 from .factory import (
     BackendFactory,
     register_backend_factory,
@@ -101,6 +107,7 @@ __all__ = [
     "AsyncSyncFileBackend",
     "BackendFactory",
     "ChecksumAlgorithm",
+    "CompatibleFileBackend",
     "FileBackend",
     "FileBackendError",
     "FileInfo",
@@ -124,6 +131,9 @@ __all__ = [
     "register_backend_factory",
     "register_vault",
     "resolve_backend",
+    "translate_backend_exception",
+    "translate_exceptions",
+    "translate_method",
     "unregister_vault",
     "vault_context",
     "vault_exists",
