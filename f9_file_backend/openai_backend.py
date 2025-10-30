@@ -87,6 +87,7 @@ from .interfaces import (
     FileBackend,
     FileBackendError,
     FileInfo,
+    FileType,
     InvalidOperationError,
     NotFoundError,
     PathLike,
@@ -866,12 +867,20 @@ class OpenAIVectorStoreFileBackend(FileBackend):
 
     def _entry_to_info(self, entry: _RemoteEntry) -> FileInfo:
         """Convert an internal entry to public FileInfo."""
+        # Determine file type
+        if entry.is_dir:
+            file_type = FileType.DIRECTORY
+        else:
+            file_type = FileType.FILE
+
         return FileInfo(
             path=Path(entry.path),
             is_dir=entry.is_dir,
             size=entry.size,
             created_at=entry.created_at,
             modified_at=entry.modified_at,
+            file_type=file_type,
+            encoding=entry.encoding,
         )
 
     _coerce_bytes = staticmethod(coerce_to_bytes)

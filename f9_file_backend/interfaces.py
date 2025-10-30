@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, BinaryIO, Literal, Protocol, Union
 
@@ -17,6 +18,15 @@ PathLike = Union[str, Path]
 DEFAULT_CHUNK_SIZE = 8192
 
 ChecksumAlgorithm = Literal["md5", "sha256", "sha512", "blake3"]
+
+
+class FileType(Enum):
+    """Enumeration of file types."""
+
+    FILE = "file"
+    DIRECTORY = "directory"
+    SYMLINK = "symlink"
+    OTHER = "other"
 
 
 class FileBackendError(RuntimeError):
@@ -120,6 +130,54 @@ class FileInfo:
     size: int
     created_at: datetime | None
     modified_at: datetime | None
+    accessed_at: datetime | None = None
+    file_type: FileType | None = None
+    permissions: int | None = None
+    owner_uid: int | None = None
+    owner_gid: int | None = None
+    checksum: str | None = None
+    encoding: str | None = None
+
+    def is_text_file(self) -> bool:
+        """Check if this is likely a text file.
+
+        Returns True if encoding is set (indicating text file detection),
+        otherwise returns False for uncertainty.
+        """
+        return self.encoding is not None
+
+    def is_binary_file(self) -> bool:
+        """Check if this is likely a binary file.
+
+        Returns True if this is a file and encoding is None,
+        otherwise returns False for uncertainty.
+        """
+        return not self.is_dir and self.encoding is None
+
+    def is_readable(self) -> bool:
+        """Check if file has read permissions.
+
+        Returns True if permissions indicate owner can read,
+        returns False if permissions is None.
+        """
+        if self.permissions is None:
+            return False
+        # Check owner read bit (bit 8 in octal permissions, or 256 in decimal)
+        return bool(self.permissions & 0o400)
+
+    def is_modified_since(self, timestamp: datetime) -> bool:
+        """Check if file was modified after the given timestamp.
+
+        Args:
+            timestamp: Datetime to compare against.
+
+        Returns:
+            True if modified_at is after timestamp, False otherwise.
+
+        """
+        if self.modified_at is None:
+            return False
+        return self.modified_at > timestamp
 
     def as_dict(self) -> dict:
         """Return a JSON-serialisable representation."""
@@ -131,6 +189,13 @@ class FileInfo:
             "modified_at": self.modified_at.isoformat()
             if self.modified_at
             else None,
+            "accessed_at": self.accessed_at.isoformat() if self.accessed_at else None,
+            "file_type": self.file_type.value if self.file_type else None,
+            "permissions": self.permissions,
+            "owner_uid": self.owner_uid,
+            "owner_gid": self.owner_gid,
+            "checksum": self.checksum,
+            "encoding": self.encoding,
         }
 
 

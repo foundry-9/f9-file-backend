@@ -185,3 +185,32 @@ def compute_checksum_from_bytes(
     hasher = get_hasher(algorithm)
     hasher.update(payload)
     return hasher.hexdigest()
+
+
+def detect_file_encoding(file_path: Path, chunk_size: int = 8192) -> str | None:
+    """Detect if a file is likely text or binary and return encoding if text.
+
+    Reads the first chunk of a file and attempts to decode it as UTF-8.
+    If successful, assumes the file is a text file with UTF-8 encoding.
+
+    Args:
+        file_path: Path to file to analyze
+        chunk_size: Size of initial chunk to read
+
+    Returns:
+        Encoding name ("utf-8") if file appears to be text, None if binary.
+
+    """
+    try:
+        with open(file_path, "rb") as fh:
+            chunk = fh.read(chunk_size)
+            if not chunk:
+                # Empty file is considered text
+                return "utf-8"
+
+            # Try to decode as UTF-8
+            chunk.decode("utf-8")
+            return "utf-8"
+    except (UnicodeDecodeError, OSError):
+        # File is binary or cannot be read
+        return None

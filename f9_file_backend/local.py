@@ -73,12 +73,18 @@ from .interfaces import (
     ChecksumAlgorithm,
     FileBackend,
     FileInfo,
+    FileType,
     InvalidOperationError,
     NotFoundError,
     PathLike,
 )
 from .locking import FileLock
-from .utils import accumulate_chunks, coerce_to_bytes, compute_checksum_from_file
+from .utils import (
+    accumulate_chunks,
+    coerce_to_bytes,
+    compute_checksum_from_file,
+    detect_file_encoding,
+)
 from .validation import (
     LocalPathEntry,
     validate_entry_exists,
@@ -200,12 +206,36 @@ class LocalFileBackend(FileBackend):
             raise NotFoundError(target)
 
         stat_result = target.stat()
+
+        # Determine file type
+        if target.is_dir():
+            file_type = FileType.DIRECTORY
+        elif target.is_symlink():
+            file_type = FileType.SYMLINK
+        else:
+            file_type = FileType.FILE
+
+        # Detect encoding for text files
+        encoding = None
+        if not target.is_dir() and not target.is_symlink():
+            encoding = detect_file_encoding(target)
+
+        # Extract owner information (Unix-like systems)
+        owner_uid = getattr(stat_result, "st_uid", None)
+        owner_gid = getattr(stat_result, "st_gid", None)
+
         return FileInfo(
             path=target,
             is_dir=target.is_dir(),
             size=stat_result.st_size,
             created_at=_timestamp_to_datetime(stat_result.st_ctime),
             modified_at=_timestamp_to_datetime(stat_result.st_mtime),
+            accessed_at=_timestamp_to_datetime(stat_result.st_atime),
+            file_type=file_type,
+            permissions=stat_result.st_mode,
+            owner_uid=owner_uid,
+            owner_gid=owner_gid,
+            encoding=encoding,
         )
 
     def stream_read(

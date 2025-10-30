@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "f9-file-backend"
-version = "0.1.23"
+version = "0.1.24"
 description = "Unified interface for file storage backends with a local filesystem implementation."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -81,6 +81,11 @@ ignore = [
 "tests/integration/test_async_integration.py" = ["S101", "ANN202", "PLR2004"]
 "tests/test_glob.py" = ["S101", "ANN202", "PLR2004", "E501"]
 "tests/integration/test_glob_integration.py" = ["S101", "ANN202", "PLR2004", "E501"]
+"tests/test_metadata.py" = ["S101", "ANN202", "PLR2004"]
+"tests/test_sync_sessions.py" = ["S101", "ANN202", "PLR2004"]
+"tests/test_registry.py" = ["S101", "ANN202", "PLR2004"]
+"tests/test_factory.py" = ["S101", "ANN202", "PLR2004"]
+"tests/test_auto_sync.py" = ["S101", "ANN202", "PLR2004"]
 ".githooks/pre-commit" = ["T201"]
 
 [tool.ruff.lint.isort]

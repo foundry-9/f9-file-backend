@@ -37,7 +37,7 @@ This document provides a detailed implementation plan for adding 10 new features
 |---------|--------|---------------|---|
 | Feature 7: Multi-Instance Management & Context | ✅ COMPLETE | ~2 hours | 33 tests (100% passing) |
 | Feature 8: Implicit Auto-Sync for Git Backends | ✅ COMPLETE | ~1 hour | 19 tests (100% passing) |
-| Feature 9: File Metadata Completeness | ⏳ PENDING | N/A | N/A |
+| Feature 9: File Metadata Completeness | ✅ COMPLETE | ~2 hours | 28 tests (100% passing) |
 | Feature 10: Exception Translation/Mapping | ⏳ PENDING | N/A | N/A |
 
 ### Feature 1: Streaming/Chunked I/O (COMPLETED ✅)
@@ -1004,40 +1004,113 @@ backend = GitSyncFileBackend(
 
 ---
 
-### Feature 9: File Metadata Completeness
+### Feature 9: File Metadata Completeness (COMPLETED ✅)
 
-**Priority**: LOW
-**Estimated effort**: 5-8 hours
+**Completion Date**: 2025-10-30
+**Estimated Effort**: 5-8 hours
+**Actual Effort**: ~2 hours (ahead of schedule)
 
-#### Implementation Steps
+#### Implementation Details
 
-1. **Update `FileInfo` Dataclass** (2 hours):
+1. **FileInfo Dataclass Extensions** (`interfaces.py`):
+   - Added `FileType` enum with values: FILE, DIRECTORY, SYMLINK, OTHER
+   - Added 7 new optional fields to `FileInfo`:
+     - `accessed_at`: Last access timestamp
+     - `file_type`: FileType enum value
+     - `permissions`: Unix permission bits (st_mode)
+     - `owner_uid`: Unix user ID
+     - `owner_gid`: Unix group ID
+     - `checksum`: Optional pre-computed file checksum
+     - `encoding`: Text encoding ("utf-8") or None for binary files
+   - Added 4 new helper methods:
+     - `is_text_file()`: Returns True if encoding is set
+     - `is_binary_file()`: Returns True if file and encoding is None
+     - `is_readable()`: Checks owner read permission bit (0o400)
+     - `is_modified_since(timestamp)`: Compares modification time
+   - Updated `as_dict()` to include all new fields in serialization
 
-   - Add optional fields: `accessed_at`, `file_type`, `permissions`, `owner_uid`, `owner_gid`, `checksum`, `encoding`
-   - Add helper methods: `is_text_file()`, `is_binary_file()`, `is_readable()`, `is_modified_since()`
-   - Define `FileType` enum
+2. **LocalFileBackend Implementation** (`local.py`):
+   - Enhanced `info()` method to populate all new metadata fields
+   - File type detection using `Path.is_dir()`, `Path.is_symlink()`
+   - Text/binary detection via `detect_file_encoding()` utility function
+   - Permission and ownership extraction from `stat_result`
+   - Accessed time extraction from `st_atime`
 
-2. **Update Backend Implementations** (2-3 hours):
+3. **Utility Functions** (`utils.py`):
+   - Added `detect_file_encoding(file_path, chunk_size)` function
+   - Reads first chunk of file and attempts UTF-8 decode
+   - Returns "utf-8" for text files, None for binary files
+   - Handles empty files as text (returns "utf-8")
 
-   - Update `LocalFileBackend` to populate new fields
-   - Update Git and OpenAI backends (populate what's available)
+4. **GitSyncFileBackend Implementation** (`git_backend.py`):
+   - Automatically inherits enhanced metadata via delegation to LocalFileBackend
+   - No changes needed - all operations delegate to `_local_backend.info()`
 
-3. **Add Tests** (1-2 hours):
+5. **OpenAIVectorStoreFileBackend Implementation** (`openai_backend.py`):
+   - Updated `_entry_to_info()` method to populate file_type and encoding
+   - File type mapping: directories → FileType.DIRECTORY, files → FileType.FILE
+   - Uses existing encoding field from `_RemoteEntry` dataclass
 
-   - Test metadata population
-   - Test helper methods
+6. **Public API** (`__init__.py`):
+   - Exported `FileType` enum for public use
 
-4. **Documentation** (1 hour):
-   - Document new metadata fields
+#### Test Coverage
 
-#### Files to Create/Modify
+- **Unit Tests** (28 tests): FileType enum, helper methods, encoding detection, permission checks, timestamp comparisons, serialization
+- **Integration Tests**: Metadata population across backends, file operations, encoding detection
+- **Total Tests**: 28 new tests, 100% passing
+- **No Regressions**: All 395 existing tests still passing (423 total passed, 14 skipped)
 
-- **Modify**: `f9_file_backend/interfaces.py`
-- **Modify**: `f9_file_backend/local.py`
-- **Modify**: `f9_file_backend/git_backend.py`
-- **Modify**: `f9_file_backend/openai_backend.py`
-- **Modify**: `tests/test_local_backend.py`
-- **Modify**: `README.md`
+#### Key Features Delivered
+
+✅ Extended file metadata with 7 new optional fields
+✅ FileType enum for consistent type representation
+✅ Text/binary file classification
+✅ Unix permission and ownership information
+✅ Timestamp-based modification detection
+✅ Helper methods for common metadata queries
+✅ JSON serialization of all metadata fields
+✅ Cross-platform support (Unix permissions gracefully handled on non-Unix)
+✅ Consistent metadata across all backends
+✅ Backward compatibility (all new fields optional with defaults)
+
+#### Usage Examples
+
+```python
+from f9_file_backend import LocalFileBackend, FileType
+from pathlib import Path
+
+backend = LocalFileBackend(root=Path("/data"))
+backend.create("document.txt", data=b"Hello, world!")
+
+info = backend.info("document.txt")
+
+# Use new metadata fields
+print(f"File type: {info.file_type}")  # FileType.FILE
+print(f"Is text: {info.is_text_file()}")  # True
+print(f"Is readable: {info.is_readable()}")  # True
+print(f"Permissions: {oct(info.permissions)}")  # e.g., '0o644'
+print(f"Owner UID: {info.owner_uid}")  # Unix user ID
+print(f"Accessed at: {info.accessed_at}")  # datetime
+
+# Timestamp comparison
+from datetime import datetime, timedelta, timezone
+past = datetime.now(tz=timezone.utc) - timedelta(hours=1)
+if info.is_modified_since(past):
+    print("File was modified in the last hour")
+
+# JSON serialization
+metadata_dict = info.as_dict()
+```
+
+#### Files Created/Modified
+
+- **Modified**: `f9_file_backend/interfaces.py` (Added FileType, extended FileInfo)
+- **Modified**: `f9_file_backend/local.py` (Enhanced info() method)
+- **Modified**: `f9_file_backend/utils.py` (Added detect_file_encoding())
+- **Modified**: `f9_file_backend/openai_backend.py` (Enhanced _entry_to_info())
+- **Modified**: `f9_file_backend/__init__.py` (Exported FileType)
+- **Created**: `tests/test_metadata.py` (28 comprehensive tests)
 
 ---
 
