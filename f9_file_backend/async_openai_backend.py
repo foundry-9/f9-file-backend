@@ -25,7 +25,9 @@ Example:
     ...     client = openai.AsyncOpenAI(api_key="sk-...")
     ...     backend = AsyncOpenAIVectorStoreFileBackend(
     ...         client=client,
-    ...         vector_store_id="vs_..."
+    ...         vector_store_id="vs_...",
+    ...         cache_ttl=300,
+    ...         purpose="assistants"
     ...     )
     ...     await backend.create("doc.txt", data=b"Content")
     ...     content = await backend.read("doc.txt")
@@ -70,20 +72,40 @@ class AsyncOpenAIVectorStoreFileBackend(AsyncFileBackend):
         *,
         client: any = None,  # openai.OpenAI
         vector_store_id: str,
+        api_key: str | None = None,
         cache_ttl: int = 300,
+        purpose: str = "assistants",
     ) -> None:
         """Initialise the async OpenAI backend.
 
         Args:
-            client: OpenAI client instance.
-            vector_store_id: ID of the vector store to use.
+            client: OpenAI client instance (optional if api_key provided).
+            vector_store_id: ID of the vector store to use (required).
+            api_key: OpenAI API key (required if client not provided).
             cache_ttl: Cache time-to-live in seconds for directory listings.
+            purpose: Purpose for the vector store (default: "assistants").
+
+        Raises:
+            ValueError: If vector_store_id is missing.
 
         """
+        if not vector_store_id:
+            message = "vector_store_id parameter is required"
+            raise ValueError(message)
+
+        # Construct connection_info dict for the sync backend
+        connection_info: dict[str, object] = {
+            "vector_store_id": vector_store_id,
+            "cache_ttl": cache_ttl,
+            "purpose": purpose,
+        }
+
+        if api_key is not None:
+            connection_info["api_key"] = api_key
+
         self._sync_backend = OpenAIVectorStoreFileBackend(
+            connection_info,
             client=client,
-            vector_store_id=vector_store_id,
-            cache_ttl=cache_ttl,
         )
 
     async def create(

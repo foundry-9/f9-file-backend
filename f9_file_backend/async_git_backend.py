@@ -23,8 +23,11 @@ Example:
     >>> async def main():
     ...     backend = AsyncGitSyncFileBackend(
     ...         root="/data/repo",
-    ...         git_config={"user.name": "Bot", "user.email": "bot@example.com"},
-    ...         auto_commit=True
+    ...         remote_url="https://github.com/user/repo.git",
+    ...         branch="main",
+    ...         author_name="Bot",
+    ...         author_email="bot@example.com",
+    ...         auto_push=False
     ...     )
     ...     await backend.create("README.md", data=b"# Project")
     ...     await backend.push()
@@ -55,7 +58,7 @@ from .interfaces import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Mapping
+    from collections.abc import AsyncIterator
     from pathlib import Path
 
 
@@ -70,28 +73,50 @@ class AsyncGitSyncFileBackend(AsyncSyncFileBackend):
         self,
         root: PathLike | None = None,
         *,
-        git_config: Mapping[str, str] | None = None,
-        auto_commit: bool = True,
+        remote_url: str | None = None,
+        branch: str = "main",
+        author_name: str | None = None,
+        author_email: str | None = None,
+        auto_pull: bool = False,
         auto_push: bool = False,
-        create_root: bool = True,
     ) -> None:
         """Initialise the async Git backend.
 
         Args:
             root: Root directory for the Git repository.
-            git_config: Git configuration key-value pairs.
-            auto_commit: Automatically commit file operations.
-            auto_push: Automatically push to remote after commits.
-            create_root: Create root directory if it doesn't exist.
+            remote_url: Git remote URL (required).
+            branch: Git branch to use (default: main).
+            author_name: Git commit author name.
+            author_email: Git commit author email.
+            auto_pull: Automatically pull from remote before read operations.
+            auto_push: Automatically push to remote after write operations.
+
+        Raises:
+            ValueError: If remote_url or path is missing.
 
         """
-        self._sync_backend = GitSyncFileBackend(
-            root=root,
-            git_config=git_config,
-            auto_commit=auto_commit,
-            auto_push=auto_push,
-            create_root=create_root,
-        )
+        if root is None:
+            message = "root parameter is required"
+            raise ValueError(message)
+        if remote_url is None:
+            message = "remote_url parameter is required"
+            raise ValueError(message)
+
+        # Construct connection_info dict for the sync backend
+        connection_info: dict[str, object] = {
+            "remote_url": remote_url,
+            "path": str(root),
+            "branch": branch,
+            "auto_pull": auto_pull,
+            "auto_push": auto_push,
+        }
+
+        if author_name is not None:
+            connection_info["author_name"] = author_name
+        if author_email is not None:
+            connection_info["author_email"] = author_email
+
+        self._sync_backend = GitSyncFileBackend(connection_info)
 
     @property
     def root(self) -> Path:

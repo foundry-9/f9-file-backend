@@ -372,9 +372,10 @@ class LocalFileBackend(FileBackend):
         """Validate path stays within root directory with symlink resolution.
 
         This method implements filesystem-aware path validation that:
-        1. Combines the path with root and resolves it (symlinks follow, .. resolved)
-        2. Verifies the resolved path is still within the root directory
-        3. Prevents path traversal attacks including symlink escapes
+        1. Normalizes leading slashes to root-relative paths (supports MCP convention)
+        2. Combines the path with root and resolves it (symlinks follow, .. resolved)
+        3. Verifies the resolved path is still within the root directory
+        4. Prevents path traversal attacks including symlink escapes
 
         Args:
             path: Potentially unsafe path from user input
@@ -386,12 +387,22 @@ class LocalFileBackend(FileBackend):
             InvalidOperationError: If path escapes root (including via symlinks)
 
         """
+        # Normalize path to handle MCP root-relative convention (leading /)
+        # Strip / only if path doesn't start with root (e.g., "/file" not absolute)
+        path_str = str(path)
+        root_str = str(self._root)
+
+        # For MCP compat: "/file.txt" -> "file.txt", but don't modify already-resolved
+        # absolute paths that start with root_str (e.g., "/tmp/root/file.txt")
+        if path_str.startswith("/") and not path_str.startswith(root_str):
+            path_str = path_str.lstrip("/") or "."
+
         # Resolve the full path: combines root with user path, follows symlinks,
         # resolves .. strict=False allows paths that don't exist yet (for create)
-        candidate = (self._root / Path(path)).resolve(strict=False)
+        candidate = (self._root / Path(path_str)).resolve(strict=False)
 
         # Verify the resolved path is still within root by trying to get relative path
-        # This catches: ../../etc/passwd, symlink escapes, absolute paths that escape
+        # This catches: ../../etc/passwd, symlink escapes
         try:
             candidate.relative_to(self._root)
         except ValueError as exc:
