@@ -71,6 +71,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from shutil import which
 from typing import TYPE_CHECKING, Any, BinaryIO
@@ -190,11 +191,101 @@ class GitSyncFileBackend(SyncFileBackend):
         if self._auto_push and not self._in_session:
             self.push(message=f"Delete {path}")
 
+    def _get_file_created_timestamp(self, rel_path: str) -> datetime | None:
+        """Extract creation timestamp (first commit) from Git history.
+
+        Args:
+            rel_path: Relative path within the Git repository.
+
+        Returns:
+            datetime object for the first commit that created the file, or None
+            if the file is not tracked in Git.
+
+        """
+        try:
+            # Find the commit that first added the file (--diff-filter=A)
+            # Use --follow to track renames, and reverse to get the oldest commit
+            result = self._run_git(
+                [
+                    "log",
+                    "--follow",
+                    "--diff-filter=A",
+                    "--reverse",
+                    "--format=%aI",
+                    "--",
+                    rel_path,
+                ],
+                check=False,
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                return None
+
+            # Get the first line (oldest commit)
+            timestamp_str = result.stdout.strip().split('\n')[0]
+            return datetime.fromisoformat(timestamp_str)
+        except (ValueError, IndexError, GitBackendError):
+            return None
+
+    def _get_file_modified_timestamp(self, rel_path: str) -> datetime | None:
+        """Extract modification timestamp (most recent commit) from Git history.
+
+        Args:
+            rel_path: Relative path within the Git repository.
+
+        Returns:
+            datetime object for the most recent commit that modified the file,
+            or None if the file is not tracked in Git.
+
+        """
+        try:
+            # Find the most recent commit affecting this file
+            # --follow tracks renames, -1 gets the most recent
+            result = self._run_git(
+                ["log", "--follow", "-1", "--format=%aI", "--", rel_path],
+                check=False,
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                return None
+
+            timestamp_str = result.stdout.strip()
+            return datetime.fromisoformat(timestamp_str)
+        except (ValueError, GitBackendError):
+            return None
+
     def info(self, path: PathLike) -> FileInfo:
-        """Return file metadata from the working tree."""
+        """Return file metadata from Git history and working tree.
+
+        Timestamps are extracted from Git history to reflect when files were
+        created and modified in the repository, rather than when they were
+        checked out in the working tree.
+        """
         if self._auto_pull and not self._in_session:
             self.pull()
-        return self._local_backend.info(path)
+
+        # Get base info from working tree
+        base_info = self._local_backend.info(path)
+
+        # Extract timestamps from Git history
+        rel_path = self._relative_path(path)
+        created_at = self._get_file_created_timestamp(rel_path)
+        modified_at = self._get_file_modified_timestamp(rel_path)
+
+        # Return FileInfo with Git timestamps if available, otherwise fall back
+        # to filesystem timestamps
+        return FileInfo(
+            path=base_info.path,
+            is_dir=base_info.is_dir,
+            size=base_info.size,
+            created_at=created_at or base_info.created_at,
+            modified_at=modified_at or base_info.modified_at,
+            accessed_at=base_info.accessed_at,
+            file_type=base_info.file_type,
+            permissions=base_info.permissions,
+            owner_uid=base_info.owner_uid,
+            owner_gid=base_info.owner_gid,
+            checksum=base_info.checksum,
+            encoding=base_info.encoding,
+        )
 
     def stream_read(
         self,
