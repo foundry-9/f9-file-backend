@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "f9-file-backend"
-version = "1.0.2"
+version = "1.0.3"
 description = "Unified interface for file storage backends with a local filesystem implementation."
 readme = "README.md"
 requires-python = ">=3.10"
