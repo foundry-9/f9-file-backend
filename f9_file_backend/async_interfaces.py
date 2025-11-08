@@ -72,7 +72,7 @@ from .interfaces import (
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
-    from contextlib import AbstractAsyncContextManager
+    from contextlib import AbstractContextManager
     from pathlib import Path
 
 
@@ -360,13 +360,16 @@ class AsyncSyncFileBackend(AsyncFileBackend):
         self,
         *,
         timeout: float | None = None,
-    ) -> AbstractAsyncContextManager[None]:
-        """Create an async context manager for atomic synchronisation operations.
+    ) -> AbstractContextManager[None]:
+        """Create a context manager for atomic synchronisation operations.
 
-        The async context manager provides exclusive access to the backend for a
-        sequence of operations, ensuring that concurrent access is prevented
-        and pull/push operations happen atomically. All operations within the
-        context are protected by a lock.
+        Returns a synchronous context manager (not async) that provides exclusive
+        access to the backend for a sequence of operations, ensuring that concurrent
+        access is prevented and pull/push operations happen atomically. All operations
+        within the context are protected by a lock.
+
+        This is intentionally a synchronous context manager to support proper
+        file-based locking semantics across sync/async boundaries.
 
         Args:
             timeout: Optional timeout in seconds for acquiring the lock. If the
@@ -381,7 +384,7 @@ class AsyncSyncFileBackend(AsyncFileBackend):
 
         Example:
             >>> backend = AsyncGitSyncFileBackend(connection_info)
-            >>> async with backend.sync_session():
+            >>> with backend.sync_session():
             ...     await backend.pull()
             ...     await backend.create("file.txt", data=b"content")
             ...     await backend.push()
