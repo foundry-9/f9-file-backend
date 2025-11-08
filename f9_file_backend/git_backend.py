@@ -548,6 +548,7 @@ class GitSyncFileBackend(SyncFileBackend):
     def _configure_identity(self) -> None:
         self._run_git(["config", "user.name", self._author_name])
         self._run_git(["config", "user.email", self._author_email])
+        self._run_git(["config", "commit.gpgsign", "false"])
 
     def _ensure_no_conflicts(self) -> None:
         if self.conflict_report():

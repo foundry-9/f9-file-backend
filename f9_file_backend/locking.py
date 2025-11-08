@@ -182,9 +182,10 @@ class FileLock:
                     # File already closed, ignore
                     pass
                 try:
-                    self._lock_file.close()
-                except OSError:
-                    # Already closed, ignore
+                    if self._lock_file is not None:
+                        self._lock_file.close()
+                except (OSError, AttributeError):
+                    # Already closed or file is None, ignore
                     pass
                 self._lock_file = None
         except OSError as e:

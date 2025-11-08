@@ -43,12 +43,14 @@ def git_remote(tmp_path: Path) -> Path:
     _run_git(["init"], cwd=seed)
     _run_git(["config", "user.name", "Seed User"], cwd=seed)
     _run_git(["config", "user.email", "seed@example.com"], cwd=seed)
+    _run_git(["config", "commit.gpgsign", "false"], cwd=seed)
     (seed / "README.md").write_text("seed\n", encoding="utf-8")
     _run_git(["add", "README.md"], cwd=seed)
     _run_git(["commit", "-m", "Initial commit"], cwd=seed)
     _run_git(["branch", "-M", "main"], cwd=seed)
     _run_git(["remote", "add", "origin", str(remote)], cwd=seed)
     _run_git(["push", "origin", "main"], cwd=seed)
+    _run_git(["symbolic-ref", "HEAD", "refs/heads/main"], cwd=remote)
     return remote
 
 
@@ -94,6 +96,7 @@ def test_git_backend_conflict_report_and_resolution(
     _run_git(["clone", str(git_remote), str(other_clone)])
     _run_git(["config", "user.name", "Remote User"], cwd=other_clone)
     _run_git(["config", "user.email", "remote@example.com"], cwd=other_clone)
+    _run_git(["config", "commit.gpgsign", "false"], cwd=other_clone)
     (other_clone / "shared.txt").write_text("remote change\n", encoding="utf-8")
     _run_git(["commit", "-am", "Remote change"], cwd=other_clone)
     _run_git(["push", "origin", "main"], cwd=other_clone)

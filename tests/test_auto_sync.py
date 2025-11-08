@@ -40,12 +40,14 @@ def git_remote(tmp_path: Path) -> Path:
     _run_git(["init"], cwd=seed)
     _run_git(["config", "user.name", "Seed User"], cwd=seed)
     _run_git(["config", "user.email", "seed@example.com"], cwd=seed)
+    _run_git(["config", "commit.gpgsign", "false"], cwd=seed)
     (seed / "README.md").write_text("seed\n", encoding="utf-8")
     _run_git(["add", "README.md"], cwd=seed)
     _run_git(["commit", "-m", "Initial commit"], cwd=seed)
     _run_git(["branch", "-M", "main"], cwd=seed)
     _run_git(["remote", "add", "origin", str(remote)], cwd=seed)
     _run_git(["push", "origin", "main"], cwd=seed)
+    _run_git(["symbolic-ref", "HEAD", "refs/heads/main"], cwd=remote)
     return remote
 
 

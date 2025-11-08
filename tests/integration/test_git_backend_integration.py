@@ -64,6 +64,7 @@ def test_git_backend_end_to_end_sync(tmp_path: Path) -> None:
     _run_git(["init"], cwd=seed_repo)
     _run_git(["config", "user.name", "Seed User"], cwd=seed_repo)
     _run_git(["config", "user.email", "seed@example.com"], cwd=seed_repo)
+    _run_git(["config", "commit.gpgsign", "false"], cwd=seed_repo)
 
     relative_paths = _create_random_files(seed_repo)
     _run_git(["add", "."], cwd=seed_repo)
@@ -74,6 +75,7 @@ def test_git_backend_end_to_end_sync(tmp_path: Path) -> None:
     _run_git(["init", "--bare", str(remote_repo)])
     _run_git(["remote", "add", "origin", str(remote_repo)], cwd=seed_repo)
     _run_git(["push", "origin", "main"], cwd=seed_repo)
+    _run_git(["symbolic-ref", "HEAD", "refs/heads/main"], cwd=remote_repo)
 
     workdir = tmp_path / "backend"
     backend = GitSyncFileBackend(
@@ -109,6 +111,7 @@ def test_git_backend_end_to_end_sync(tmp_path: Path) -> None:
     _run_git(["clone", str(remote_repo), str(remote_clone)])
     _run_git(["config", "user.name", "Remote User"], cwd=remote_clone)
     _run_git(["config", "user.email", "remote@example.com"], cwd=remote_clone)
+    _run_git(["config", "commit.gpgsign", "false"], cwd=remote_clone)
     remote_conflict_content = f"remote-change-{secrets.token_hex(6)}\n"
     (remote_clone / conflict_rel_path).write_text(
         remote_conflict_content,
